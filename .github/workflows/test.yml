@@ -13,9 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - uses: actions/setup-go@v7
         with:
           go-version-file: threadmap/go.mod
           cache: false
+      # The Go binary embeds web/dist, so the frontend has to build first.
+      - run: npm ci && npm run build
+        working-directory: threadmap/web
       - run: go test ./...
         working-directory: threadmap

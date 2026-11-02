@@ -3,6 +3,7 @@ version: "0.1.1"
 slug: threadmap
 description: Map of your Thread network, read from the OpenThread Border Router add-on
 url: https://github.com/mcreekmore/threadmap
+image: ghcr.io/mcreekmore/threadmap
 arch:
   - aarch64
   - amd64

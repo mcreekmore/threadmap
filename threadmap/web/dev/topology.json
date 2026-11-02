@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    { "rloc": "0x0400", "label": "Kitchen Plug", "mac": "aaaa000000000001", "kind": "router" },
+    { "rloc": "0x0401", "label": "Door Sensor", "kind": "child" },
+    { "rloc": "0xec00", "label": "Test Humidifier 0001", "mac": "1111222233334444", "kind": "router" },
+    { "rloc": "0xf400", "label": "Border router", "mac": "aaaabbbbccccdddd", "kind": "router", "leader": true, "border": true }
+  ],
+  "links": [
+    { "a": "0x0400", "b": "0x0401", "quality": null },
+    { "a": "0x0400", "b": "0xec00", "quality": 2 },
+    { "a": "0x0400", "b": "0xf400", "quality": 1 },
+    { "a": "0xec00", "b": "0xf400", "quality": 3 }
+  ],
+  "warnings": ["Bedroom Sensor is registered but wasn't located in the mesh; it may be asleep or offline."]
+}

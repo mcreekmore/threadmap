@@ -23,9 +23,27 @@ The page is only reachable through Home Assistant's login, with no open port. Th
 
 ## Development
 
+The backend is Go with no dependencies. The page is Svelte 5, Vite and Cytoscape, in `threadmap/web`.
+
 ```bash
-cd threadmap
+cd threadmap/web
+npm ci
+npm run dev        # live reload with sample data from dev/topology.json
+npm run build      # required before Go builds, since the binary embeds web/dist
+
+cd ..
 go test ./...
 ```
 
 The fixtures in `threadmap/testdata` are sanitized captures from a real network.
+
+## Releasing
+
+Push a version tag from `main`:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+GitHub Actions runs the tests, publishes the `ghcr.io/mcreekmore/threadmap` image for amd64 and arm64, sets `version` in `config.yaml`, and creates the GitHub release. Don't change `version` by hand: Home Assistant offers the update as soon as it changes, so the image has to exist first.

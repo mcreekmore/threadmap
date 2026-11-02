@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func fixture(t *testing.T, name string) string {
@@ -240,11 +241,12 @@ func TestOnlyFromIngress(t *testing.T) {
 }
 
 func TestRoutes(t *testing.T) {
-	h := routes(func(context.Context) (otctl, error) { return nil, errors.New(protectionMsg) })
+	site := fstest.MapFS{"index.html": {Data: []byte("<title>Thread map</title>")}}
+	h := routes(site, func(context.Context) (otctl, error) { return nil, errors.New(protectionMsg) })
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "<svg") {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Thread map") {
 		t.Errorf("index: %d", rec.Code)
 	}
 

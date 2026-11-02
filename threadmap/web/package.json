@@ -1,0 +1,15 @@
+{
+  "name": "threadmap-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "cytoscape": "^3.34.4",
+    "svelte": "^5.57.3",
+    "vite": "^8.3.5"
+  }
+}

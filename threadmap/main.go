@@ -3,11 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -29,8 +30,8 @@ const (
 	protectionMsg = "can't reach Docker. Turn Protection mode off for this add-on, then restart it"
 )
 
-//go:embed index.html
-var indexHTML []byte
+//go:embed all:web/dist
+var webFiles embed.FS
 
 // otctl runs one ot-ctl command in the border router.
 type otctl func(ctx context.Context, args ...string) (string, error)
@@ -191,13 +192,10 @@ func onlyFromIngress(peer string, next http.Handler) http.Handler {
 	})
 }
 
-func routes(find func(context.Context) (otctl, error)) http.Handler {
+func routes(site fs.FS, find func(context.Context) (otctl, error)) http.Handler {
 	var scanning sync.Mutex // Don't let overlapping page loads multiply traffic on the mesh.
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(indexHTML)
-	})
+	mux.Handle("GET /", http.FileServerFS(site))
 	mux.HandleFunc("GET /api/topology", func(w http.ResponseWriter, r *http.Request) {
 		scanning.Lock()
 		defer scanning.Unlock()
@@ -223,6 +221,10 @@ func routes(find func(context.Context) (otctl, error)) http.Handler {
 }
 
 func main() {
+	site, err := fs.Sub(webFiles, "web/dist")
+	if err != nil {
+		log.Fatal(err)
+	}
 	d := newDocker()
 	find := func(ctx context.Context) (otctl, error) {
 		id, err := d.findBorderRouter(ctx)
@@ -233,7 +235,7 @@ func main() {
 	}
 	log.Printf("listening on %s", listenAddr)
 	go func() {
-		log.Fatal(http.ListenAndServe(listenAddr, onlyFromIngress(ingressPeer, routes(find))))
+		log.Fatal(http.ListenAndServe(listenAddr, onlyFromIngress(ingressPeer, routes(site, find))))
 	}()
 	// Exit cleanly on stop; otherwise HA shows the stopped add-on as failed.
 	stop := make(chan os.Signal, 1)
