@@ -40,7 +40,7 @@
   th,
   td {
     text-align: left;
-    padding: 6px 10px 6px 0;
+    padding: var(--space-s) var(--space-m) var(--space-s) 0;
     border-bottom: 1px solid var(--line);
     white-space: nowrap;
   }
@@ -51,6 +51,6 @@
   }
 
   code {
-    font-size: 13px;
+    font-size: var(--text-small);
   }
 </style>

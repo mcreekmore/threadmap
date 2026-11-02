@@ -70,18 +70,18 @@
     margin: auto;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
+    gap: var(--space-m);
   }
 
   header {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-m);
   }
 
   h1 {
-    font-size: 20px;
+    font-size: var(--text-large);
     margin: 0;
   }
 
@@ -96,8 +96,8 @@
     color: var(--text);
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 6px 14px;
+    border-radius: var(--radius);
+    padding: var(--space-s) var(--space-m);
     cursor: pointer;
   }
 
@@ -119,9 +119,9 @@
   .legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 18px;
+    gap: var(--space-s) var(--space-l);
     color: var(--muted);
-    font-size: 13px;
+    font-size: var(--text-small);
   }
 
   .legend i {
@@ -129,7 +129,7 @@
     width: 22px;
     border-top: 3px solid;
     vertical-align: middle;
-    margin-right: 6px;
+    margin-right: var(--space-s);
   }
 
   .legend i.dashed {
