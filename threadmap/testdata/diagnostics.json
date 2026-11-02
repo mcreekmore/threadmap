@@ -20,7 +20,7 @@
 							"routeCost":	1
 						}]
 				},
-				"children":	[],
+				"childTable":	[],
 				"created":	"2026-01-01T00:00:00-05:00"
 			}
 		}, {
@@ -44,7 +44,7 @@
 							"routeCost":	1
 						}]
 				},
-				"children":	[],
+				"childTable":	[],
 				"created":	"2026-01-01T00:00:00-05:00"
 			}
 		}],

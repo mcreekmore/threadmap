@@ -19,7 +19,7 @@ const (
 	requestLimit = 15 * time.Second
 	taskLimit    = 60 * time.Second
 	discoverTask = `{"maxAge":30,"maxRetries":3,"deviceCount":1,"timeout":10}`
-	diagTask     = `{"destination":%q,"types":["extAddress","rloc16","route","children"],"timeout":10}`
+	diagTask     = `{"destination":%q,"types":["extAddress","rloc16","route",%q],"timeout":10}`
 	reachMsg     = "can't reach the border router's REST API. Is the OpenThread Border Router add-on started?"
 )
 
@@ -122,7 +122,8 @@ type diagnostic struct {
 		Route      struct {
 			RouteData []route `json:"routeData"`
 		} `json:"route"`
-		Children []struct {
+		ChildTable []json.RawMessage `json:"childTable"`
+		Children   []struct {
 			Rloc16     string `json:"rloc16"`
 			ExtAddress string `json:"extAddress"`
 			LinkMargin int    `json:"linkMargin"`
@@ -169,6 +170,11 @@ func toRouter(d diagnostic) (router, error) {
 	return r, nil
 }
 
+// diagnose asks one router for its links plus childTable or children, replacing its stored result.
+func (b borderRouter) diagnose(ctx context.Context, id, childField string) (string, error) {
+	return b.runTask(ctx, "getNetworkDiagnosticTask", fmt.Sprintf(diagTask, id, childField))
+}
+
 // scan reads topology over REST and names from discover, which runs alongside to keep the scan short.
 func (b borderRouter) scan(ctx context.Context, discover func(context.Context) []service) (meshMap, error) {
 	var warnings []string
@@ -206,7 +212,7 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 		if d.Attributes.Role == "child" {
 			continue
 		}
-		status, err := b.runTask(ctx, "getNetworkDiagnosticTask", fmt.Sprintf(diagTask, d.ID))
+		status, err := b.diagnose(ctx, d.ID, "childTable")
 		if err != nil {
 			return meshMap{}, err
 		}
@@ -219,6 +225,24 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 	if err := b.call(ctx, http.MethodGet, "/api/diagnostics", "", &diagnostics); err != nil {
 		return meshMap{}, err
 	}
+	// children has MACs, but costs a full timeout on routers that don't answer it, so only ask when needed.
+	asked := false
+	for _, d := range diagnostics.Data {
+		if len(d.Attributes.ChildTable) > 0 {
+			asked = true
+			if status, err := b.diagnose(ctx, d.Attributes.ExtAddress, "children"); err != nil {
+				return meshMap{}, err
+			} else if status != "completed" {
+				warnf("Router %s didn't report its children (%s).", d.Attributes.ExtAddress, status)
+			}
+		}
+	}
+	if asked {
+		if err := b.call(ctx, http.MethodGet, "/api/diagnostics", "", &diagnostics); err != nil {
+			return meshMap{}, err
+		}
+	}
+
 	var routers []router
 	for _, d := range diagnostics.Data {
 		r, err := toRouter(d)

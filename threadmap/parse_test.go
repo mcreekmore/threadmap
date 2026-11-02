@@ -103,7 +103,7 @@ func TestScanFixtures(t *testing.T) {
 	if f.calls[0] != "DELETE /api/diagnostics" {
 		t.Errorf("calls = %v", f.calls)
 	}
-	if len(f.bodies) != 3 || !strings.Contains(f.bodies[1], "1111222233334444") || !strings.Contains(f.bodies[2], "aaaabbbbccccdddd") {
+	if len(f.bodies) != 3 || !strings.Contains(f.bodies[1], "1111222233334444") || !strings.Contains(f.bodies[2], "aaaabbbbccccdddd") || strings.Contains(strings.Join(f.bodies, ""), `"children"`) {
 		t.Errorf("tasks = %v", f.bodies)
 	}
 }
@@ -150,7 +150,7 @@ func TestChildFromDiagnostics(t *testing.T) {
 	devices := `{"data":[
 		{"id":"aa","type":"threadBorderRouter","attributes":{"role":"router","omrIpv6Address":"fd00::a","leaderData":{"leaderRouterId":1}}},
 		{"id":"cc","type":"threadDevice","attributes":{"role":"child","omrIpv6Address":"fd00::c"}}]}`
-	diagnostics := `{"data":[{"attributes":{"extAddress":"aa","rloc16":"0x0400","route":{"routeData":[]},
+	diagnostics := `{"data":[{"attributes":{"extAddress":"aa","rloc16":"0x0400","route":{"routeData":[]},"childTable":[{"childId":1},{"childId":2}],
 		"children":[{"rloc16":"0x0401","extAddress":"cc","linkMargin":25},{"rloc16":"0x0402","extAddress":"dd","linkMargin":5}]}}]}`
 	f := &fakeREST{devices: devices, diagnostics: diagnostics}
 	sensor := service{name: "Sensor", addrs: []netip.Addr{netip.MustParseAddr("fd00::c")}}
@@ -158,8 +158,9 @@ func TestChildFromDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(f.bodies) != 2 {
-		t.Errorf("a child shouldn't get its own diagnostic task: %v", f.bodies)
+	// Discovery, then childTable, then children because the table wasn't empty; never the child itself.
+	if len(f.bodies) != 3 || !strings.Contains(f.bodies[1], "childTable") || !strings.Contains(f.bodies[2], `"children"`) || strings.Contains(strings.Join(f.bodies, ""), `"cc"`) {
+		t.Errorf("tasks = %v", f.bodies)
 	}
 	if len(m.Nodes) != 3 || m.Nodes[1].Label != "Sensor" || m.Nodes[1].Kind != "child" || m.Nodes[2].Label != "dd" {
 		t.Fatalf("nodes = %+v", m.Nodes)
