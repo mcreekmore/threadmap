@@ -1,3 +1,5 @@
+<img src="threadmap/icon.png" alt="" width="64" height="64">
+
 # Threadmap
 
 A Home Assistant add-on that draws a map of your Thread network: every router, its link quality, and device names where they can be found. It reads the mesh from the OpenThread Border Router add-on, so it works with HomeKit, Matter, and any other Thread device.
@@ -47,3 +49,7 @@ git push origin v0.2.0
 ```
 
 GitHub Actions runs the tests, publishes the `ghcr.io/mcreekmore/threadmap` image for amd64 and arm64, sets `version` in `config.yaml`, and creates the GitHub release. Don't change `version` by hand: Home Assistant offers the update as soon as it changes, so the image has to exist first.
+
+## Credits
+
+The icon is `graph-outline` from [Material Design Icons](https://pictogrammers.com/library/mdi/), recoloured, under the [Pictogrammers Free License](https://github.com/Templarian/MaterialDesign/blob/master/LICENSE).
