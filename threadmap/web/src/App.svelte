@@ -2,7 +2,17 @@
   import DeviceTable from './DeviceTable.svelte'
   import MeshGraph from './MeshGraph.svelte'
 
-  let map = $state(null)
+  const savedKey = 'threadmap-last-map'
+
+  function lastMap() {
+    try {
+      return JSON.parse(localStorage.getItem(savedKey))
+    } catch {
+      return null
+    }
+  }
+
+  let map = $state(lastMap())
   let error = $state('')
   let status = $state('')
   let scanning = $state(false)
@@ -10,18 +20,23 @@
   async function refresh() {
     scanning = true
     error = ''
-    status = 'Scanning the mesh…'
+    status = map ? 'Showing the last scan, updating…' : 'Scanning the mesh…'
     try {
       // Relative URL: under ingress the page lives below a per-session path.
       const res = await fetch('api/topology', { cache: 'no-store' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       map = data
+      try {
+        localStorage.setItem(savedKey, JSON.stringify(data))
+      } catch {
+        // Without storage, the next load just waits for its scan.
+      }
       const count = data.nodes.length
       status = `${count} device${count === 1 ? '' : 's'}, scanned ${new Date().toLocaleTimeString()}`
     } catch (e) {
       error = e.message
-      status = 'Scan failed'
+      status = map ? 'Scan failed, showing the last scan' : 'Scan failed'
     } finally {
       scanning = false
     }
