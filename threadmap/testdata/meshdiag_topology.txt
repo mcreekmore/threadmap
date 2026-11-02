@@ -1,0 +1,5 @@
+id:61 rloc16:0xf400 ext-addr:aaaabbbbccccdddd ver:5 - me - leader - br
+    3-links:{ 59 }
+id:59 rloc16:0xec00 ext-addr:1111222233334444
+    3-links:{ 61 }
+Done
