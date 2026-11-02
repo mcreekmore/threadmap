@@ -6,21 +6,23 @@ A Home Assistant add-on that draws a map of your Thread network: every router, i
 
 1. In Home Assistant, open the add-on store, choose **Repositories** from the top-right menu, and add `https://github.com/mcreekmore/threadmap`.
 2. Install **Threadmap**.
-3. On the add-on's Info tab, turn **Protection mode** off and start it.
+3. Start it, leaving **Protection mode** on.
 4. Open **Thread map** from the sidebar.
+
+If you installed a version before the switch to the REST API, turn Protection mode back on: it no longer needs to be off.
 
 ## Security
 
-The add-on needs Docker access to run `ot-ctl` inside the border router, and Home Assistant only grants that with Protection mode off. That setting gives the add-on broad access to your host, so stop the add-on and turn Protection mode back on when you're finished.
+The add-on has no Docker access. It reads the mesh from the border router's REST API, which Home Assistant keeps on its internal network, so the REST API port can stay unset. That API has no login, so anything on the internal network can reach it, including routes that expose the network key or factory reset the border router. Threadmap only uses `/api/actions`, `/api/devices` and `/api/diagnostics`.
 
-The page is only reachable through Home Assistant's login, with no open port. The add-on runs `meshdiag topology children`, `meshdiag topology`, `srp server service`, `eidcache`, and `ping`, and only when you open the page or press Refresh. It never runs `dataset` commands, because their output contains the network key.
+It uses host networking to read device names over mDNS. The page listens on Home Assistant's internal interface and only accepts requests from its login-protected ingress gateway, so it has no open port on your LAN. Scans only run when you open the page or press Refresh.
 
 ## What the map can't show yet
 
-- Children come from each router's child table, which doesn't report MACs. An unnamed child is labelled by its RLOC16.
-- A sleepy device may not answer the ping used to find its name, so it can appear under its RLOC16, with a warning that its name wasn't located.
-- A stale address cache entry can show a name on the wrong device until the entry expires.
-- Matter devices probably show hashed IDs, since their SRP names aren't friendly names.
+- Device names come from mDNS, matched by each device's IPv6 address. A device that advertises a different address shows its MAC, with a warning if it looks like it's on the mesh.
+- Matter devices probably show hashed IDs, since their service names aren't friendly names.
+- Only the border router the add-on talks to is marked as a border router.
+- Child devices haven't been tested on a real network yet.
 
 ## Development
 

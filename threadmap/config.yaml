@@ -13,4 +13,4 @@ ingress: true
 ingress_port: 8099
 panel_icon: mdi:graph-outline
 panel_title: Thread map
-docker_api: true
+host_network: true

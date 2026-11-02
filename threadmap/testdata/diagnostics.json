@@ -1,0 +1,58 @@
+{
+	"data": [{
+			"id":	"00000000-0000-4000-8000-000000000001",
+			"type":	"networkDiagnostics",
+			"attributes":	{
+				"extAddress":	"1111222233334444",
+				"rloc16":	"0xec00",
+				"routerId":	59,
+				"route":	{
+					"idSequence":	1,
+					"routeData":	[{
+							"routeId":	59,
+							"linkQualityOut":	0,
+							"linkQualityIn":	0,
+							"routeCost":	1
+						}, {
+							"routeId":	61,
+							"linkQualityOut":	3,
+							"linkQualityIn":	3,
+							"routeCost":	1
+						}]
+				},
+				"children":	[],
+				"created":	"2026-01-01T00:00:00-05:00"
+			}
+		}, {
+			"id":	"00000000-0000-4000-8000-000000000002",
+			"type":	"networkDiagnostics",
+			"attributes":	{
+				"extAddress":	"aaaabbbbccccdddd",
+				"rloc16":	"0xf400",
+				"routerId":	61,
+				"route":	{
+					"idSequence":	1,
+					"routeData":	[{
+							"routeId":	59,
+							"linkQualityOut":	3,
+							"linkQualityIn":	3,
+							"routeCost":	1
+						}, {
+							"routeId":	61,
+							"linkQualityOut":	0,
+							"linkQualityIn":	0,
+							"routeCost":	1
+						}]
+				},
+				"children":	[],
+				"created":	"2026-01-01T00:00:00-05:00"
+			}
+		}],
+	"meta":	{
+		"collection":	{
+			"offset":	0,
+			"limit":	200,
+			"total":	2
+		}
+	}
+}

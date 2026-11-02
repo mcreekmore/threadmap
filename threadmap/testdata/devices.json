@@ -1,0 +1,53 @@
+{
+	"data": [{
+			"id":	"1111222233334444",
+			"type":	"threadDevice",
+			"attributes":	{
+				"extAddress":	"1111222233334444",
+				"mlEidIid":	"0000000000000001",
+				"omrIpv6Address":	"fd00:db8:1:1::1",
+				"hostname":	"",
+				"role":	"router",
+				"mode":	{
+					"fullThreadDevice":	true,
+					"rxOnWhenIdle":	true,
+					"fullNetworkData":	true
+				},
+				"created":	"2026-01-01T00:00:00-05:00"
+			}
+		}, {
+			"id":	"aaaabbbbccccdddd",
+			"type":	"threadBorderRouter",
+			"attributes":	{
+				"extAddress":	"aaaabbbbccccdddd",
+				"mlEidIid":	"0000000000000002",
+				"omrIpv6Address":	"fd00:db8:1:1::2",
+				"hostname":	"",
+				"role":	"router",
+				"mode":	{
+					"fullThreadDevice":	true,
+					"rxOnWhenIdle":	true,
+					"fullNetworkData":	true
+				},
+				"state":	"leader",
+				"routerCount":	2,
+				"rloc16":	"0xf400",
+				"routerId":	61,
+				"leaderData":	{
+					"partitionId":	1,
+					"weighting":	64,
+					"dataVersion":	1,
+					"stableDataVersion":	1,
+					"leaderRouterId":	61
+				},
+				"created":	"2026-01-01T00:00:00-05:00"
+			}
+		}],
+	"meta":	{
+		"collection":	{
+			"offset":	0,
+			"limit":	200,
+			"total":	2
+		}
+	}
+}

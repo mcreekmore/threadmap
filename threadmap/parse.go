@@ -3,181 +3,30 @@ package main
 import (
 	"fmt"
 	"net/netip"
-	"regexp"
+	"slices"
 	"sort"
-	"strconv"
 	"strings"
 )
 
 type router struct {
-	id      int
-	rloc    uint16
-	mac     string
-	leader  bool
-	border  bool
-	linksTo map[int]int // router ID -> link quality
-	// childrenKnown is false if the child table wasn't reported, so an absent child proves nothing.
-	childrenKnown bool
-	children      []child
+	id       int
+	rloc     uint16
+	mac      string
+	leader   bool
+	border   bool
+	linksTo  map[int]int // router ID -> link quality
+	children []child
 }
 
 type child struct {
 	rloc    uint16
+	mac     string
 	quality int
 }
 
 type service struct {
 	name  string
 	addrs []netip.Addr
-}
-
-var (
-	routerLine = regexp.MustCompile(`^id:(\d+) rloc16:0x([0-9a-fA-F]+) ext-addr:([0-9a-fA-F]+)(.*)$`)
-	linkLine   = regexp.MustCompile(`^\s*(\d+)-links:\{([^}]*)\}`)
-	childLine  = regexp.MustCompile(`^\s*rloc16:0x([0-9a-fA-F]+) lq:(\d+)`)
-)
-
-// The ot-ctl output format isn't a stable API, so every parser skips lines it doesn't recognize.
-
-func parseTopology(out string) []router {
-	var routers []router
-	for _, line := range strings.Split(out, "\n") {
-		if m := routerLine.FindStringSubmatch(line); m != nil {
-			id, err := strconv.Atoi(m[1])
-			rloc, err2 := strconv.ParseUint(m[2], 16, 16)
-			if err != nil || err2 != nil {
-				continue
-			}
-			flags := strings.Fields(m[4])
-			routers = append(routers, router{
-				id:      id,
-				rloc:    uint16(rloc),
-				mac:     m[3],
-				leader:  contains(flags, "leader"),
-				border:  contains(flags, "br"),
-				linksTo: map[int]int{},
-			})
-		} else if m := linkLine.FindStringSubmatch(line); m != nil && len(routers) > 0 {
-			quality, err := strconv.Atoi(m[1])
-			if err != nil {
-				continue
-			}
-			for _, field := range strings.Fields(m[2]) {
-				if id, err := strconv.Atoi(field); err == nil {
-					routers[len(routers)-1].linksTo[id] = quality
-				}
-			}
-		} else if m := childLine.FindStringSubmatch(line); m != nil && len(routers) > 0 {
-			rloc, err := strconv.ParseUint(m[1], 16, 16)
-			quality, err2 := strconv.Atoi(m[2])
-			if err != nil || err2 != nil {
-				continue
-			}
-			r := &routers[len(routers)-1]
-			r.childrenKnown = true
-			r.children = append(r.children, child{uint16(rloc), quality})
-		} else if strings.HasPrefix(strings.TrimSpace(line), "children:") && len(routers) > 0 {
-			routers[len(routers)-1].childrenKnown = true
-		}
-	}
-	return routers
-}
-
-func parseServices(out string) []service {
-	var services []service
-	var cur *service
-	flush := func() {
-		if cur != nil {
-			services = append(services, *cur)
-		}
-		cur = nil
-	}
-	for _, line := range strings.Split(out, "\n") {
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case line != "" && line[0] != ' ' && line[0] != '\t':
-			flush()
-			if name, _, ok := strings.Cut(line, "._"); ok {
-				cur = &service{name: name}
-			}
-		case cur == nil:
-		case trimmed == "deleted: true":
-			cur = nil
-		case strings.HasPrefix(trimmed, "addresses:"):
-			list := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "addresses:")), "[]")
-			for _, field := range strings.Split(list, ",") {
-				if addr, err := netip.ParseAddr(strings.TrimSpace(field)); err == nil {
-					cur.addrs = append(cur.addrs, addr)
-				}
-			}
-		}
-	}
-	flush()
-	return services
-}
-
-func parseEIDCache(out string) map[netip.Addr]uint16 {
-	cache := map[netip.Addr]uint16{}
-	for _, line := range strings.Split(out, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		addr, err := netip.ParseAddr(fields[0])
-		rloc, err2 := strconv.ParseUint(strings.TrimPrefix(fields[1], "0x"), 16, 16)
-		// 0xfffe marks a lookup still in progress, so there is no location yet.
-		if err != nil || err2 != nil || rloc == 0xfffe {
-			continue
-		}
-		cache[addr] = uint16(rloc)
-	}
-	return cache
-}
-
-// locate returns the RLOC16 of a service, ignoring cache entries for anything no longer in the mesh.
-func locate(s service, routers []router, cache map[netip.Addr]uint16) (uint16, bool) {
-	for _, addr := range s.addrs {
-		if rloc, ok := cache[addr]; ok && inMesh(rloc, routers) {
-			return rloc, true
-		}
-	}
-	return 0, false
-}
-
-func inMesh(rloc uint16, routers []router) bool {
-	for _, r := range routers {
-		if r.id != int(rloc>>10) {
-			continue
-		}
-		if rloc == r.rloc || !r.childrenKnown {
-			return true
-		}
-		for _, c := range r.children {
-			if c.rloc == rloc {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func routerIDs(routers []router) map[int]bool {
-	ids := map[int]bool{}
-	for _, r := range routers {
-		ids[r.id] = true
-	}
-	return ids
-}
-
-// pingTargets returns one address for each named device the cache can't place yet.
-func pingTargets(routers []router, services []service, cache map[netip.Addr]uint16) []netip.Addr {
-	var targets []netip.Addr
-	for _, s := range services {
-		if _, ok := locate(s, routers, cache); !ok && len(s.addrs) > 0 {
-			targets = append(targets, s.addrs[0])
-		}
-	}
-	return targets
 }
 
 type node struct {
@@ -194,7 +43,7 @@ type node struct {
 type link struct {
 	A       string `json:"a"`
 	B       string `json:"b"`
-	Quality *int   `json:"quality"` // nil if the child table wasn't available
+	Quality int    `json:"quality"`
 }
 
 type meshMap struct {
@@ -205,43 +54,48 @@ type meshMap struct {
 
 func rlocString(rloc uint16) string { return fmt.Sprintf("0x%04x", rloc) }
 
-func buildMap(routers []router, services []service, cache map[netip.Addr]uint16) meshMap {
+// buildMap names devices by matching each service's addresses to the OMR address reported per MAC.
+func buildMap(routers []router, omrs map[string]netip.Addr, services []service) meshMap {
 	m := meshMap{Nodes: []*node{}, Links: []link{}, Warnings: []string{}}
-	byRLOC := map[uint16]*node{}
 	rlocByID := map[int]uint16{}
 	for _, r := range routers {
-		n := &node{key: r.rloc, RLOC: rlocString(r.rloc), MAC: r.mac, Kind: "router", Leader: r.leader, Border: r.border}
-		byRLOC[r.rloc] = n
+		m.Nodes = append(m.Nodes, &node{key: r.rloc, RLOC: rlocString(r.rloc), MAC: r.mac, Kind: "router", Leader: r.leader, Border: r.border})
 		rlocByID[r.id] = r.rloc
-		m.Nodes = append(m.Nodes, n)
-	}
-
-	addChild := func(rloc uint16, quality *int) *node {
-		n := &node{key: rloc, RLOC: rlocString(rloc), Kind: "child"}
-		byRLOC[rloc] = n
-		m.Nodes = append(m.Nodes, n)
-		m.Links = append(m.Links, link{A: rlocString(rlocByID[int(rloc>>10)]), B: n.RLOC, Quality: quality})
-		return n
 	}
 	for _, r := range routers {
 		for _, c := range r.children {
-			q := c.quality
-			addChild(c.rloc, &q)
+			n := &node{key: c.rloc, RLOC: rlocString(c.rloc), MAC: c.mac, Kind: "child"}
+			m.Nodes = append(m.Nodes, n)
+			m.Links = append(m.Links, link{A: rlocString(r.rloc), B: n.RLOC, Quality: c.quality})
 		}
 	}
 
+	byAddr := map[netip.Addr]*node{}
+	for _, n := range m.Nodes {
+		byAddr[omrs[n.MAC]] = n
+	}
+	prefixes := map[netip.Prefix]bool{}
+	for _, addr := range omrs {
+		if p, err := addr.Prefix(64); err == nil {
+			prefixes[p] = true
+		}
+	}
 	for _, s := range services {
-		rloc, ok := locate(s, routers, cache)
-		if !ok {
+		located, onMesh := false, false
+		for _, addr := range s.addrs {
+			if p, err := addr.Prefix(64); err == nil && prefixes[p] {
+				onMesh = true
+			}
+			if n := byAddr[addr]; n != nil {
+				located = true
+				if !slices.Contains(n.names, s.name) {
+					n.names = append(n.names, s.name)
+				}
+			}
+		}
+		// Off-mesh addresses are Wi-Fi or Ethernet devices using the same service types, like Matter over LAN.
+		if onMesh && !located {
 			m.Warnings = append(m.Warnings, fmt.Sprintf("%s is registered but wasn't located in the mesh; it may be asleep or offline.", s.name))
-			continue
-		}
-		n := byRLOC[rloc]
-		if n == nil { // A child of router rloc>>10, seen without a child table.
-			n = addChild(rloc, nil)
-		}
-		if !contains(n.names, s.name) {
-			n.names = append(n.names, s.name)
 		}
 	}
 
@@ -251,19 +105,16 @@ func buildMap(routers []router, services []service, cache map[netip.Addr]uint16)
 			n.Label = strings.Join(n.names, ", ")
 		case n.Border:
 			n.Label = "Border router"
-		case n.MAC == "": // The child table doesn't report MACs.
-			n.Label = n.RLOC
 		default:
 			n.Label = n.MAC
 		}
 	}
 
 	// Each router reports the link separately, so keep one edge at the lower reported quality.
-	ids := routerIDs(routers)
 	lowest := map[[2]int]int{}
 	for _, r := range routers {
 		for to, quality := range r.linksTo {
-			if !ids[to] {
+			if _, known := rlocByID[to]; !known {
 				continue
 			}
 			pair := [2]int{min(r.id, to), max(r.id, to)}
@@ -273,8 +124,7 @@ func buildMap(routers []router, services []service, cache map[netip.Addr]uint16)
 		}
 	}
 	for pair, quality := range lowest {
-		q := quality
-		m.Links = append(m.Links, link{A: rlocString(rlocByID[pair[0]]), B: rlocString(rlocByID[pair[1]]), Quality: &q})
+		m.Links = append(m.Links, link{A: rlocString(rlocByID[pair[0]]), B: rlocString(rlocByID[pair[1]]), Quality: quality})
 	}
 
 	sort.Slice(m.Nodes, func(i, j int) bool { return m.Nodes[i].key < m.Nodes[j].key })
@@ -285,13 +135,4 @@ func buildMap(routers []router, services []service, cache map[netip.Addr]uint16)
 		return m.Links[i].B < m.Links[j].B
 	})
 	return m
-}
-
-func contains(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
