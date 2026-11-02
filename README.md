@@ -1,6 +1,4 @@
-<img src="threadmap/icon.png" alt="" width="64" height="64">
-
-# Threadmap
+# <img src="threadmap/icon.png" alt="" width="32" height="32"> Threadmap
 
 A Home Assistant add-on that draws a map of your Thread network: every router, its link quality, and device names where they can be found. It reads the mesh from the OpenThread Border Router add-on, so it works with HomeKit, Matter, and any other Thread device.
 
