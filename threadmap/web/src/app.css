@@ -1,10 +1,10 @@
 :root {
   color-scheme: light dark;
-  --bg: #f6f7f8;
+  --bg: #fafafa;
   --panel: #fff;
-  --text: #1c2024;
-  --muted: #5d6670;
-  --line: #d9dde1;
+  --text: #212121;
+  --muted: #727272;
+  --line: #e0e0e0;
   --accent: #03a9f4;
   --q3: #1e8e4e;
   --q2: #7a9a01;
@@ -16,17 +16,17 @@
   --space-l: 16px;
   --text-small: 13px;
   --text-large: 20px;
-  --radius: 8px;
+  --radius: 12px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111418;
-    --panel: #1b1f24;
-    --text: #e7eaed;
-    --muted: #a0a9b2;
-    --line: #333a42;
-    --accent: #4fc3f7;
+    --bg: #111111;
+    --panel: #1c1c1c;
+    --text: #e1e1e1;
+    --muted: #9b9b9b;
+    --line: #2f2f2f;
+    --accent: #03a9f4;
     --q3: #4cc47f;
     --q2: #b5d334;
     --q1: #f0a04b;
@@ -44,12 +44,12 @@ body {
   padding: var(--space-l);
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.45 system-ui, sans-serif;
+  font: 14px/1.43 Roboto, system-ui, sans-serif;
 }
 
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: var(--space-m) var(--space-l);
+  padding: var(--space-l);
 }

@@ -70,7 +70,7 @@
     margin: auto;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-m);
+    gap: var(--space-l);
   }
 
   header {
@@ -82,6 +82,7 @@
 
   h1 {
     font-size: var(--text-large);
+    font-weight: 400;
     margin: 0;
   }
 
