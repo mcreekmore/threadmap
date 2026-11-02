@@ -1,11 +1,12 @@
-<script>
+<script lang="ts">
   import cytoscape from 'cytoscape'
+  import type { Device, Link } from './types'
 
-  let { nodes, links } = $props()
-  let container
+  let { nodes, links }: { nodes: Device[]; links: Link[] } = $props()
+  let container: HTMLDivElement
 
   // Kept across refreshes so the map doesn't rearrange itself or undo your dragging.
-  const positions = new Map()
+  const positions = new Map<string, cytoscape.Position>()
 
   function elements() {
     return [
@@ -14,15 +15,15 @@
         position: positions.get(n.rloc),
       })),
       ...links.map((l) => ({
-        data: { source: l.a, target: l.b, quality: l.quality ?? undefined, text: l.quality === null ? '' : `q${l.quality}` },
+        data: { source: l.a, target: l.b, quality: l.quality, text: `q${l.quality}` },
       })),
     ]
   }
 
   // Canvas styles can't read CSS variables, so resolve them to real colours.
-  function graphStyle() {
+  function graphStyle(): cytoscape.StylesheetJson {
     const css = getComputedStyle(document.documentElement)
-    const color = (name) => css.getPropertyValue(name).trim()
+    const color = (name: string) => css.getPropertyValue(name).trim()
     return [
       {
         selector: 'node',
@@ -48,8 +49,6 @@
         selector: 'edge',
         style: {
           width: 3,
-          'line-color': color('--unknown'),
-          'line-style': 'dashed',
           label: 'data(text)',
           'font-size': 12,
           color: color('--muted'),
@@ -57,7 +56,6 @@
           'text-outline-width': 3,
         },
       },
-      { selector: 'edge[quality]', style: { 'line-style': 'solid' } },
       { selector: 'edge[quality = 3]', style: { 'line-color': color('--q3') } },
       { selector: 'edge[quality = 2]', style: { 'line-color': color('--q2') } },
       { selector: 'edge[quality = 1]', style: { 'line-color': color('--q1') } },
@@ -94,7 +92,9 @@
 
     return () => {
       dark.removeEventListener('change', restyle)
-      cy.nodes().forEach((n) => positions.set(n.id(), { ...n.position() }))
+      cy.nodes().forEach((n) => {
+        positions.set(n.id(), { ...n.position() })
+      })
       cy.destroy()
     }
   })

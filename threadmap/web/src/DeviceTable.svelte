@@ -1,7 +1,9 @@
-<script>
-  let { nodes } = $props()
+<script lang="ts">
+  import type { Device } from './types'
 
-  function role(node) {
+  let { nodes }: { nodes: Device[] } = $props()
+
+  function role(node: Device) {
     if (node.kind === 'child') return 'Child'
     const roles = [node.border ? 'Border router' : 'Router']
     if (node.leader) roles.push('Leader')

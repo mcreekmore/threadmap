@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -252,6 +254,32 @@ func TestParseDNS(t *testing.T) {
 	}
 	if _, err := parseDNS(p[:4]); err == nil {
 		t.Error("short packet: expected an error")
+	}
+}
+
+// The frontend's sample data is also checked against web/src/types.ts, which keeps Go and TypeScript aligned.
+func TestSampleMatchesMeshMap(t *testing.T) {
+	data, err := os.ReadFile("web/dev/topology.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m meshMap
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want, got any
+	if err := json.Unmarshal(data, &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("sample doesn't round-trip through meshMap:\ngot  %s\nwant %s", encoded, data)
 	}
 }
 

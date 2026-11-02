@@ -21,7 +21,7 @@ jobs:
           go-version-file: threadmap/go.mod
           cache: false
       # The Go binary embeds web/dist, so the frontend has to build first.
-      - run: npm ci && npm run build
+      - run: npm ci && npm run check && npm run build
         working-directory: threadmap/web
       - run: go test ./...
         working-directory: threadmap

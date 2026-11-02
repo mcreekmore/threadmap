@@ -14,7 +14,6 @@ const sampleTopology = {
 }
 
 export default defineConfig({
-  // Relative asset URLs: under ingress the page lives below a per-session path.
   base: './',
   plugins: [svelte(), sampleTopology],
 })

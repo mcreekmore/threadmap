@@ -1,12 +1,13 @@
-<script>
+<script lang="ts">
   import DeviceTable from './DeviceTable.svelte'
   import MeshGraph from './MeshGraph.svelte'
+  import type { MeshMap } from './types'
 
   const savedKey = 'threadmap-last-map'
 
-  function lastMap() {
+  function lastMap(): MeshMap | null {
     try {
-      return JSON.parse(localStorage.getItem(savedKey))
+      return JSON.parse(localStorage.getItem(savedKey) ?? 'null')
     } catch {
       return null
     }
@@ -35,7 +36,7 @@
       const count = data.nodes.length
       status = `${count} device${count === 1 ? '' : 's'}, scanned ${new Date().toLocaleTimeString()}`
     } catch (e) {
-      error = e.message
+      error = (e as Error).message
       status = map ? 'Scan failed, showing the last scan' : 'Scan failed'
     } finally {
       scanning = false
@@ -64,7 +65,6 @@
       <span><i style:border-color="var(--q2)"></i>Quality 2</span>
       <span><i style:border-color="var(--q1)"></i>Quality 1</span>
       <span><i style:border-color="var(--q0)"></i>Quality 0</span>
-      <span><i class="dashed" style:border-color="var(--unknown)"></i>Quality unknown</span>
     </div>
 
     {#if map.warnings.length > 0}
@@ -146,10 +146,6 @@
     border-top: 3px solid;
     vertical-align: middle;
     margin-right: var(--space-s);
-  }
-
-  .legend i.dashed {
-    border-top-style: dashed;
   }
 
   .warnings {

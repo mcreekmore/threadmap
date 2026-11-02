@@ -21,4 +21,4 @@ try {
   // HA's page isn't readable, so keep the colours from app.css.
 }
 
-mount(App, { target: document.getElementById('app') })
+mount(App, { target: document.getElementById('app')! })
