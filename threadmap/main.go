@@ -12,8 +12,11 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -229,5 +232,11 @@ func main() {
 		return d.otctl(id), nil
 	}
 	log.Printf("listening on %s", listenAddr)
-	log.Fatal(http.ListenAndServe(listenAddr, onlyFromIngress(ingressPeer, routes(find))))
+	go func() {
+		log.Fatal(http.ListenAndServe(listenAddr, onlyFromIngress(ingressPeer, routes(find))))
+	}()
+	// Exit cleanly on stop; otherwise HA shows the stopped add-on as failed.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM, os.Interrupt)
+	<-stop
 }
