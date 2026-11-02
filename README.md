@@ -13,12 +13,13 @@ A Home Assistant add-on that draws a map of your Thread network: every router, i
 
 The add-on needs Docker access to run `ot-ctl` inside the border router, and Home Assistant only grants that with Protection mode off. That setting gives the add-on broad access to your host, so stop the add-on and turn Protection mode back on when you're finished.
 
-The page is only reachable through Home Assistant's login, with no open port. The add-on runs `meshdiag topology`, `srp server service`, `eidcache`, and `ping`, and only when you open the page or press Refresh. It never runs `dataset` commands, because their output contains the network key.
+The page is only reachable through Home Assistant's login, with no open port. The add-on runs `meshdiag topology children`, `meshdiag topology`, `srp server service`, `eidcache`, and `ping`, and only when you open the page or press Refresh. It never runs `dataset` commands, because their output contains the network key.
 
 ## What the map can't show yet
 
-- Children appear only if they have an SRP name and can be located, and their link quality isn't reported.
-- Sleepy devices may not answer the ping used to locate them. They're listed as warnings.
+- Children come from each router's child table, which doesn't report MACs. An unnamed child is labelled by its RLOC16.
+- A sleepy device may not answer the ping used to find its name, so it can appear under its RLOC16, with a warning that its name wasn't located.
+- A stale address cache entry can show a name on the wrong device until the entry expires.
 - Matter devices probably show hashed IDs, since their SRP names aren't friendly names.
 
 ## Development

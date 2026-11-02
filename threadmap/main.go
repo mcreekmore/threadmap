@@ -38,17 +38,22 @@ type otctl func(ctx context.Context, args ...string) (string, error)
 
 // scan only issues read-only commands. Never add `dataset` here: its output contains the network key.
 func scan(ctx context.Context, run otctl) (meshMap, error) {
-	out, err := run(ctx, "meshdiag", "topology")
-	if err != nil {
-		return meshMap{}, fmt.Errorf("meshdiag topology: %w", err)
-	}
+	var warnings []string
+	warnf := func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }
+
+	out, err := run(ctx, "meshdiag", "topology", "children")
 	routers := parseTopology(out)
+	if err != nil || len(routers) == 0 {
+		warnf("Couldn't read child tables, so some children may be missing.")
+		out, err = run(ctx, "meshdiag", "topology")
+		if err != nil {
+			return meshMap{}, fmt.Errorf("meshdiag topology: %w", err)
+		}
+		routers = parseTopology(out)
+	}
 	if len(routers) == 0 {
 		return meshMap{}, errors.New("meshdiag topology returned no routers")
 	}
-
-	var warnings []string
-	warnf := func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }
 
 	var services []service
 	if out, err := run(ctx, "srp", "server", "service"); err != nil {

@@ -1,0 +1,9 @@
+id:62 rloc16:0xf800 ext-addr:ce349873897233a5 ver:4 - me - br
+   3-links:{ 2 }
+   children: none
+id:2 rloc16:0x0800 ext-addr:8aa57d2c603fe16c ver:4 - leader - br
+   3-links:{ 62 }
+   children:
+       rloc16:0x0803 lq:3, mode:rn
+       rloc16:0x0804 lq:3, mode:rdn
+Done

@@ -16,6 +16,14 @@ type router struct {
 	leader  bool
 	border  bool
 	linksTo map[int]int // router ID -> link quality
+	// childrenKnown is false if the child table wasn't reported, so an absent child proves nothing.
+	childrenKnown bool
+	children      []child
+}
+
+type child struct {
+	rloc    uint16
+	quality int
 }
 
 type service struct {
@@ -26,6 +34,7 @@ type service struct {
 var (
 	routerLine = regexp.MustCompile(`^id:(\d+) rloc16:0x([0-9a-fA-F]+) ext-addr:([0-9a-fA-F]+)(.*)$`)
 	linkLine   = regexp.MustCompile(`^\s*(\d+)-links:\{([^}]*)\}`)
+	childLine  = regexp.MustCompile(`^\s*rloc16:0x([0-9a-fA-F]+) lq:(\d+)`)
 )
 
 // The ot-ctl output format isn't a stable API, so every parser skips lines it doesn't recognize.
@@ -58,6 +67,17 @@ func parseTopology(out string) []router {
 					routers[len(routers)-1].linksTo[id] = quality
 				}
 			}
+		} else if m := childLine.FindStringSubmatch(line); m != nil && len(routers) > 0 {
+			rloc, err := strconv.ParseUint(m[1], 16, 16)
+			quality, err2 := strconv.Atoi(m[2])
+			if err != nil || err2 != nil {
+				continue
+			}
+			r := &routers[len(routers)-1]
+			r.childrenKnown = true
+			r.children = append(r.children, child{uint16(rloc), quality})
+		} else if strings.HasPrefix(strings.TrimSpace(line), "children:") && len(routers) > 0 {
+			routers[len(routers)-1].childrenKnown = true
 		}
 	}
 	return routers
@@ -114,14 +134,31 @@ func parseEIDCache(out string) map[netip.Addr]uint16 {
 	return cache
 }
 
-// locate returns the RLOC16 of a service, ignoring cache entries that point at a router no longer in the mesh.
-func locate(s service, routerIDs map[int]bool, cache map[netip.Addr]uint16) (uint16, bool) {
+// locate returns the RLOC16 of a service, ignoring cache entries for anything no longer in the mesh.
+func locate(s service, routers []router, cache map[netip.Addr]uint16) (uint16, bool) {
 	for _, addr := range s.addrs {
-		if rloc, ok := cache[addr]; ok && routerIDs[int(rloc>>10)] {
+		if rloc, ok := cache[addr]; ok && inMesh(rloc, routers) {
 			return rloc, true
 		}
 	}
 	return 0, false
+}
+
+func inMesh(rloc uint16, routers []router) bool {
+	for _, r := range routers {
+		if r.id != int(rloc>>10) {
+			continue
+		}
+		if rloc == r.rloc || !r.childrenKnown {
+			return true
+		}
+		for _, c := range r.children {
+			if c.rloc == rloc {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func routerIDs(routers []router) map[int]bool {
@@ -134,10 +171,9 @@ func routerIDs(routers []router) map[int]bool {
 
 // pingTargets returns one address for each named device the cache can't place yet.
 func pingTargets(routers []router, services []service, cache map[netip.Addr]uint16) []netip.Addr {
-	ids := routerIDs(routers)
 	var targets []netip.Addr
 	for _, s := range services {
-		if _, ok := locate(s, ids, cache); !ok && len(s.addrs) > 0 {
+		if _, ok := locate(s, routers, cache); !ok && len(s.addrs) > 0 {
 			targets = append(targets, s.addrs[0])
 		}
 	}
@@ -158,7 +194,7 @@ type node struct {
 type link struct {
 	A       string `json:"a"`
 	B       string `json:"b"`
-	Quality *int   `json:"quality"` // nil for a child's link, whose quality isn't reported
+	Quality *int   `json:"quality"` // nil if the child table wasn't available
 }
 
 type meshMap struct {
@@ -180,19 +216,29 @@ func buildMap(routers []router, services []service, cache map[netip.Addr]uint16)
 		m.Nodes = append(m.Nodes, n)
 	}
 
-	ids := routerIDs(routers)
+	addChild := func(rloc uint16, quality *int) *node {
+		n := &node{key: rloc, RLOC: rlocString(rloc), Kind: "child"}
+		byRLOC[rloc] = n
+		m.Nodes = append(m.Nodes, n)
+		m.Links = append(m.Links, link{A: rlocString(rlocByID[int(rloc>>10)]), B: n.RLOC, Quality: quality})
+		return n
+	}
+	for _, r := range routers {
+		for _, c := range r.children {
+			q := c.quality
+			addChild(c.rloc, &q)
+		}
+	}
+
 	for _, s := range services {
-		rloc, ok := locate(s, ids, cache)
+		rloc, ok := locate(s, routers, cache)
 		if !ok {
 			m.Warnings = append(m.Warnings, fmt.Sprintf("%s is registered but wasn't located in the mesh; it may be asleep or offline.", s.name))
 			continue
 		}
 		n := byRLOC[rloc]
-		if n == nil { // Non-zero low bits: a child of router rloc>>10.
-			n = &node{key: rloc, RLOC: rlocString(rloc), Kind: "child"}
-			byRLOC[rloc] = n
-			m.Nodes = append(m.Nodes, n)
-			m.Links = append(m.Links, link{A: rlocString(rlocByID[int(rloc>>10)]), B: n.RLOC})
+		if n == nil { // A child of router rloc>>10, seen without a child table.
+			n = addChild(rloc, nil)
 		}
 		if !contains(n.names, s.name) {
 			n.names = append(n.names, s.name)
@@ -205,12 +251,15 @@ func buildMap(routers []router, services []service, cache map[netip.Addr]uint16)
 			n.Label = strings.Join(n.names, ", ")
 		case n.Border:
 			n.Label = "Border router"
+		case n.MAC == "": // The child table doesn't report MACs.
+			n.Label = n.RLOC
 		default:
 			n.Label = n.MAC
 		}
 	}
 
 	// Each router reports the link separately, so keep one edge at the lower reported quality.
+	ids := routerIDs(routers)
 	lowest := map[[2]int]int{}
 	for _, r := range routers {
 		for to, quality := range r.linksTo {

@@ -37,9 +37,9 @@ func fakeRun(outputs map[string]string, calls *[]string) otctl {
 
 func fixtures(t *testing.T) map[string]string {
 	return map[string]string{
-		"meshdiag topology":  fixture(t, "meshdiag_topology.txt"),
-		"srp server service": fixture(t, "srp_server_service.txt"),
-		"eidcache":           fixture(t, "eidcache.txt"),
+		"meshdiag topology children": fixture(t, "meshdiag_topology.txt"),
+		"srp server service":         fixture(t, "srp_server_service.txt"),
+		"eidcache":                   fixture(t, "eidcache.txt"),
 	}
 }
 
@@ -79,7 +79,7 @@ func TestScanPingsOnlyOnMiss(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Join(calls, "|")
-	want := "meshdiag topology|srp server service|eidcache|ping fd00:db8:1:1::1|eidcache"
+	want := "meshdiag topology children|srp server service|eidcache|ping fd00:db8:1:1::1|eidcache"
 	if got != want {
 		t.Errorf("calls = %s", got)
 	}
@@ -99,8 +99,12 @@ func TestScanErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Nodes[0].Label != "1111222233334444" || len(m.Warnings) != 2 {
+	// The child table, names and cache all failed, each with its own warning.
+	if m.Nodes[0].Label != "1111222233334444" || len(m.Warnings) != 3 {
 		t.Errorf("unexpected map: %+v %v", m.Nodes[0], m.Warnings)
+	}
+	if !strings.Contains(strings.Join(calls, "|"), "meshdiag topology|") {
+		t.Errorf("no fallback to plain topology: %v", calls)
 	}
 }
 
@@ -143,7 +147,8 @@ func TestParseEIDCacheSkipsPendingLookups(t *testing.T) {
 }
 
 func TestBuildMapChildAndStaleCache(t *testing.T) {
-	routers := parseTopology(fixture(t, "meshdiag_topology.txt"))
+	// No child table in this output, so the cache is the only evidence of a child.
+	routers := parseTopology("id:61 rloc16:0xf400 ext-addr:aa\n    3-links:{ 59 }\nid:59 rloc16:0xec00 ext-addr:bb\n    3-links:{ 61 }\n")
 	a, b := netip.MustParseAddr("fd00::a"), netip.MustParseAddr("fd00::b")
 	services := []service{{name: "Sleepy", addrs: []netip.Addr{a}}, {name: "Stale", addrs: []netip.Addr{b}}}
 	// 0xec05 is a child of router 59; 0x0400 is router 1, which isn't in the mesh.
@@ -165,6 +170,37 @@ func TestBuildMapChildAndStaleCache(t *testing.T) {
 		t.Errorf("warnings = %v", m.Warnings)
 	}
 	if got := pingTargets(routers, services, map[netip.Addr]uint16{a: 0xec05, b: 0x0400}); len(got) != 1 || got[0] != b {
+		t.Errorf("ping targets = %v", got)
+	}
+}
+
+func TestBuildMapChildTable(t *testing.T) {
+	routers := parseTopology(fixture(t, "meshdiag_topology_children.txt"))
+	if !routers[0].childrenKnown || len(routers[0].children) != 0 || len(routers[1].children) != 2 {
+		t.Fatalf("routers = %+v", routers)
+	}
+	named, stale := netip.MustParseAddr("fd00::a"), netip.MustParseAddr("fd00::b")
+	services := []service{{name: "Plug", addrs: []netip.Addr{named}}, {name: "Gone", addrs: []netip.Addr{stale}}}
+	// 0x0805 isn't in router 2's child table, so the device has gone even though the router hasn't.
+	cache := map[netip.Addr]uint16{named: 0x0803, stale: 0x0805}
+	m := buildMap(routers, services, cache)
+
+	labels := map[string]string{}
+	for _, n := range m.Nodes {
+		labels[n.RLOC] = n.Label
+	}
+	if labels["0x0803"] != "Plug" || labels["0x0804"] != "0x0804" || labels["0x0805"] != "" {
+		t.Errorf("labels = %v", labels)
+	}
+	for _, l := range m.Links {
+		if l.B == "0x0803" && (l.A != "0x0800" || l.Quality == nil || *l.Quality != 3) {
+			t.Errorf("child link = %+v", l)
+		}
+	}
+	if len(m.Warnings) != 1 || !strings.Contains(m.Warnings[0], "Gone") {
+		t.Errorf("warnings = %v", m.Warnings)
+	}
+	if got := pingTargets(routers, services, cache); len(got) != 1 || got[0] != stale {
 		t.Errorf("ping targets = %v", got)
 	}
 }

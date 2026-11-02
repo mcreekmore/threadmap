@@ -49,7 +49,7 @@
       <span><i style:border-color="var(--q2)"></i>Quality 2</span>
       <span><i style:border-color="var(--q1)"></i>Quality 1</span>
       <span><i style:border-color="var(--q0)"></i>Quality 0</span>
-      <span><i class="dashed" style:border-color="var(--unknown)"></i>Child link</span>
+      <span><i class="dashed" style:border-color="var(--unknown)"></i>Quality unknown</span>
     </div>
 
     {#if map.warnings.length > 0}
