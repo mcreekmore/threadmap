@@ -134,7 +134,7 @@ func toServices(records []record) []service {
 		for _, t := range serviceTypes {
 			if name, ok := strings.CutSuffix(r.name, "."+t); ok && r.kind == typeSRV && !seen[r.name] {
 				seen[r.name] = true
-				services = append(services, service{name, addrs[strings.ToLower(r.value)]})
+				services = append(services, service{name, addrs[strings.ToLower(r.value)], t == "_matter._tcp.local"})
 			}
 		}
 	}

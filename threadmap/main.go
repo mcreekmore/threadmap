@@ -67,7 +67,10 @@ func main() {
 		log.Fatal(err)
 	}
 	border := borderRouter{base: restBase}
-	scan := func(ctx context.Context) (meshMap, error) { return border.scan(ctx, browse) }
+	discover := func(ctx context.Context) []service {
+		return nameMatter(browse(ctx), matterNames(ctx, coreAPI, os.Getenv("SUPERVISOR_TOKEN")))
+	}
+	scan := func(ctx context.Context) (meshMap, error) { return border.scan(ctx, discover) }
 	log.Printf("listening on %s", listenAddr)
 	go func() {
 		log.Fatal(http.ListenAndServe(listenAddr, onlyFromIngress(ingressPeer, routes(site, scan))))

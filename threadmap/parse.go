@@ -25,8 +25,9 @@ type child struct {
 }
 
 type service struct {
-	name  string
-	addrs []netip.Addr
+	name   string
+	addrs  []netip.Addr
+	matter bool // name is a Matter "<fabric ID>-<node ID>", not a friendly name
 }
 
 type node struct {

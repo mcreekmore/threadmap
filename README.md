@@ -15,12 +15,14 @@ If you installed a version before the switch to the REST API, turn Protection mo
 
 The add-on has no Docker access. It reads the mesh from the border router's REST API, which Home Assistant keeps on its internal network, so the REST API port can stay unset. That API has no login, so anything on the internal network can reach it, including routes that expose the network key or factory reset the border router. Threadmap only uses `/api/actions`, `/api/devices` and `/api/diagnostics`.
 
+It also has Home Assistant API access, which it uses only to run one read-only template that looks up the names of Matter devices.
+
 It uses host networking to read device names over mDNS. The page listens on Home Assistant's internal interface and only accepts requests from its login-protected ingress gateway, so it has no open port on your LAN. Scans only run when you open the page or press Refresh.
 
 ## What the map can't show yet
 
 - Device names come from mDNS, matched by each device's IPv6 address. A device that advertises a different address shows its MAC, with a warning if it looks like it's on the mesh.
-- Matter devices probably show hashed IDs, since their service names aren't friendly names.
+- Matter devices are named from Home Assistant's device registry. A Matter device that isn't paired to Home Assistant shows its MAC.
 - Only the border router the add-on talks to is marked as a border router.
 - Child devices haven't been tested on a real network yet.
 
