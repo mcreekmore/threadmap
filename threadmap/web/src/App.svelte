@@ -25,8 +25,9 @@
     try {
       // Relative URL: under ingress the page lives below a per-session path.
       const res = await fetch('api/topology', { cache: 'no-store' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+      // While the add-on restarts, ingress answers with an HTML error page.
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data) throw new Error(data?.error ?? `Scan failed: ${res.status} ${res.statusText}`)
       map = data
       try {
         localStorage.setItem(savedKey, JSON.stringify(data))

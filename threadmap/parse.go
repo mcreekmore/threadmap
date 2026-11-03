@@ -38,7 +38,6 @@ type node struct {
 	Leader bool   `json:"leader,omitempty"`
 	Border bool   `json:"border,omitempty"`
 	names  []string
-	key    uint16
 }
 
 type link struct {
@@ -60,12 +59,12 @@ func buildMap(routers []router, omrs map[string]netip.Addr, services []service) 
 	m := meshMap{Nodes: []*node{}, Links: []link{}, Warnings: []string{}}
 	rlocByID := map[int]uint16{}
 	for _, r := range routers {
-		m.Nodes = append(m.Nodes, &node{key: r.rloc, RLOC: rlocString(r.rloc), MAC: r.mac, Kind: "router", Leader: r.leader, Border: r.border})
+		m.Nodes = append(m.Nodes, &node{RLOC: rlocString(r.rloc), MAC: r.mac, Kind: "router", Leader: r.leader, Border: r.border})
 		rlocByID[r.id] = r.rloc
 	}
 	for _, r := range routers {
 		for _, c := range r.children {
-			n := &node{key: c.rloc, RLOC: rlocString(c.rloc), MAC: c.mac, Kind: "child"}
+			n := &node{RLOC: rlocString(c.rloc), MAC: c.mac, Kind: "child"}
 			m.Nodes = append(m.Nodes, n)
 			m.Links = append(m.Links, link{A: rlocString(r.rloc), B: n.RLOC, Quality: c.quality})
 		}
@@ -128,7 +127,7 @@ func buildMap(routers []router, omrs map[string]netip.Addr, services []service) 
 		m.Links = append(m.Links, link{A: rlocString(rlocByID[pair[0]]), B: rlocString(rlocByID[pair[1]]), Quality: quality})
 	}
 
-	sort.Slice(m.Nodes, func(i, j int) bool { return m.Nodes[i].key < m.Nodes[j].key })
+	sort.Slice(m.Nodes, func(i, j int) bool { return m.Nodes[i].RLOC < m.Nodes[j].RLOC })
 	sort.Slice(m.Links, func(i, j int) bool {
 		if m.Links[i].A != m.Links[j].A {
 			return m.Links[i].A < m.Links[j].A

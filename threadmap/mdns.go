@@ -64,7 +64,13 @@ func browse(ctx context.Context) []service {
 		mu.Lock()
 		seen := slices.Clone(records)
 		mu.Unlock()
+		// Replies repeat records; ask once per round, but again next round in case a reply was lost.
+		queried := map[string]bool{}
 		for _, r := range seen {
+			if queried[r.value] {
+				continue
+			}
+			queried[r.value] = true
 			switch r.kind {
 			case typePTR:
 				send(r.value, typeSRV)
