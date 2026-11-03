@@ -24,6 +24,8 @@ func matterNames(ctx context.Context, base, token string) map[string]string {
 	if token == "" {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, requestLimit) // A hung HA would otherwise hold the whole scan.
+	defer cancel()
 	body, _ := json.Marshal(map[string]string{"template": matterTemplate})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/template", strings.NewReader(string(body)))
 	if err != nil {
