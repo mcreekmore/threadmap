@@ -30,6 +30,9 @@
 				"extAddress":	"aaaabbbbccccdddd",
 				"rloc16":	"0xf400",
 				"routerId":	61,
+				"leaderData":	{
+					"leaderRouterId":	61
+				},
 				"route":	{
 					"idSequence":	1,
 					"routeData":	[{

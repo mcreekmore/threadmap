@@ -21,6 +21,9 @@ const (
 
 var serviceTypes = []string{"_hap._udp.local", "_matter._tcp.local"}
 
+// browseLimit caps the browse for devices that never answer, like ones that registered no service.
+const browseLimit = 6 * time.Second
+
 type record struct {
 	name  string
 	kind  uint16
@@ -28,7 +31,8 @@ type record struct {
 }
 
 // browse asks the LAN which Thread services exist; the border router republishes them there from SRP.
-func browse(ctx context.Context) []service {
+// It stops once every address from want and every service found has been resolved, or after browseLimit.
+func browse(ctx context.Context, want <-chan []netip.Addr) []service {
 	var mu sync.Mutex
 	var records []record
 
@@ -57,15 +61,21 @@ func browse(ctx context.Context) []service {
 			c.WriteToUDP(dnsQuery(name, qtype), group)
 		}
 	}
-	for range 3 {
-		for _, t := range serviceTypes {
-			send(t, typePTR)
+	var wanted []netip.Addr
+	known := false
+	deadline := time.After(browseLimit)
+	queried := map[string]bool{}
+	for tick := 0; ; tick++ {
+		// Replies repeat records; ask each name once, but everything again every 2s in case a reply was lost.
+		if tick%8 == 0 {
+			clear(queried)
+			for _, t := range serviceTypes {
+				send(t, typePTR)
+			}
 		}
 		mu.Lock()
 		seen := slices.Clone(records)
 		mu.Unlock()
-		// Replies repeat records; ask once per round, but again next round in case a reply was lost.
-		queried := map[string]bool{}
 		for _, r := range seen {
 			if queried[r.value] {
 				continue
@@ -78,16 +88,48 @@ func browse(ctx context.Context) []service {
 				send(r.value, typeAAAA)
 			}
 		}
+		if known && resolved(seen, wanted) {
+			return toServices(seen)
+		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(2 * time.Second):
+		case <-deadline:
+			return toServices(seen)
+		case wanted = <-want:
+			known, want = true, nil
+		case <-time.After(250 * time.Millisecond):
 		}
 	}
+}
 
-	mu.Lock()
-	defer mu.Unlock()
-	return toServices(records)
+// resolved reports whether every wanted address and every instance and host seen so far has its records.
+// ponytail: a responder that first answers after the others are resolved is missed; if that shows up, also wait a minimum time.
+func resolved(records []record, want []netip.Addr) bool {
+	have := map[string]bool{} // instances with an SRV, hosts with an AAAA
+	addrs := map[netip.Addr]bool{}
+	for _, r := range records {
+		switch r.kind {
+		case typeSRV:
+			have[strings.ToLower(r.name)] = true
+		case typeAAAA:
+			have[strings.ToLower(r.name)] = true
+			if a, err := netip.ParseAddr(r.value); err == nil {
+				addrs[a] = true
+			}
+		}
+	}
+	for _, r := range records {
+		if (r.kind == typePTR || r.kind == typeSRV) && !have[strings.ToLower(r.value)] {
+			return false
+		}
+	}
+	for _, a := range want {
+		if !addrs[a] {
+			return false
+		}
+	}
+	return true
 }
 
 // multicastSockets opens one socket per IPv4 address. Their ephemeral source ports ask for unicast

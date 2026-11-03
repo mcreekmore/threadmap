@@ -38,6 +38,7 @@ type fakeREST struct {
 	devices     string
 	diagnostics string
 	status      string // Final status of every task.
+	want        []netip.Addr
 }
 
 func (f *fakeREST) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +79,14 @@ func scanFake(t *testing.T, f *fakeREST, services ...service) (meshMap, error) {
 	}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
-	return borderRouter{base: srv.URL}.scan(context.Background(), func(context.Context) []service { return services })
+	return borderRouter{base: srv.URL}.scan(context.Background(), func(_ context.Context, want <-chan []netip.Addr) []service {
+		f.want = <-want
+		return services
+	})
+}
+
+func hasTask(bodies []string, kind string) bool {
+	return strings.Contains(strings.Join(bodies, ""), kind)
 }
 
 func TestScanFixtures(t *testing.T) {
@@ -101,12 +109,33 @@ func TestScanFixtures(t *testing.T) {
 	if l := m.Links[0]; l.A != "0xec00" || l.B != "0xf400" || l.Quality != 3 {
 		t.Errorf("link = %+v", l)
 	}
-	// Old results are cleared first, and each router gets its own diagnostic task.
+	// Old results are cleared first, each router gets its own diagnostic task, and the cached devices
+	// were complete, so discovery is skipped.
 	if f.calls[0] != "DELETE /api/diagnostics" {
 		t.Errorf("calls = %v", f.calls)
 	}
-	if len(f.bodies) != 3 || !strings.Contains(f.bodies[1], "1111222233334444") || !strings.Contains(f.bodies[2], "aaaabbbbccccdddd") || strings.Contains(strings.Join(f.bodies, ""), `"children"`) {
+	if len(f.bodies) != 2 || !strings.Contains(f.bodies[0], "1111222233334444") || !strings.Contains(f.bodies[1], "aaaabbbbccccdddd") || hasTask(f.bodies, `"children"`) {
 		t.Errorf("tasks = %v", f.bodies)
+	}
+	// mDNS only has to name the humidifier; the border router registers no service.
+	if !reflect.DeepEqual(f.want, []netip.Addr{netip.MustParseAddr("fd00:db8:1:1::1")}) {
+		t.Errorf("want = %v", f.want)
+	}
+}
+
+func TestScanDiscoversRoutersMissingFromCollection(t *testing.T) {
+	diagnostics := strings.Replace(fixture(t, "diagnostics.json"), `"routeData":	[{`, `"routeData":	[{"routeId": 16}, {`, 1)
+	f := &fakeREST{devices: fixture(t, "devices.json"), diagnostics: diagnostics}
+	m, err := scanFake(t, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both routers, then discovery for router 16, then both routers again.
+	if len(f.bodies) != 5 || !strings.Contains(f.bodies[2], "updateDeviceCollectionTask") {
+		t.Errorf("tasks = %v", f.bodies)
+	}
+	if len(m.Warnings) != 1 || !strings.Contains(m.Warnings[0], "0x4000") {
+		t.Errorf("warnings = %v", m.Warnings)
 	}
 }
 
@@ -128,7 +157,7 @@ func TestScanWarnsOnStoppedTasks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Nodes) != 2 || len(m.Warnings) != 3 {
+	if len(m.Nodes) != 2 || len(m.Warnings) != 2 {
 		t.Errorf("unexpected map: %+v %v", m.Nodes, m.Warnings)
 	}
 }
@@ -141,7 +170,7 @@ func TestScanFailsWithoutRouters(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL
 	srv.Close()
-	_, err := borderRouter{base: url}.scan(context.Background(), func(context.Context) []service { return nil })
+	_, err := borderRouter{base: url}.scan(context.Background(), func(context.Context, <-chan []netip.Addr) []service { return nil })
 	if err == nil || !strings.Contains(err.Error(), "OpenThread Border Router") {
 		t.Errorf("err = %v", err)
 	}
@@ -150,7 +179,7 @@ func TestScanFailsWithoutRouters(t *testing.T) {
 // Child entries are shaped from the OTBR source, since no real network here has had children yet.
 func TestChildFromDiagnostics(t *testing.T) {
 	devices := `{"data":[
-		{"id":"aa","type":"threadBorderRouter","attributes":{"role":"router","omrIpv6Address":"fd00::a","leaderData":{"leaderRouterId":1}}},
+		{"id":"aa","type":"threadBorderRouter","attributes":{"role":"router","omrIpv6Address":"fd00::a"}},
 		{"id":"cc","type":"threadDevice","attributes":{"role":"child","omrIpv6Address":"fd00::c"}}]}`
 	diagnostics := `{"data":[{"attributes":{"extAddress":"aa","rloc16":"0x0400","route":{"routeData":[]},"childTable":[{"childId":1},{"childId":2}],
 		"children":[{"rloc16":"0x0401","extAddress":"cc","linkMargin":25},{"rloc16":"0x0402","extAddress":"dd","linkMargin":5}]}}]}`
@@ -160,9 +189,14 @@ func TestChildFromDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Discovery, then childTable, then children because the table wasn't empty; never the child itself.
-	if len(f.bodies) != 3 || !strings.Contains(f.bodies[1], "childTable") || !strings.Contains(f.bodies[2], `"children"`) || strings.Contains(strings.Join(f.bodies, ""), `"cc"`) {
+	// childTable, then children because the table wasn't empty; never the child itself. Child dd has no
+	// cached address, so discovery runs and both are asked again.
+	if len(f.bodies) != 5 || !strings.Contains(f.bodies[0], "childTable") || !strings.Contains(f.bodies[1], `"children"`) ||
+		!strings.Contains(f.bodies[2], "updateDeviceCollectionTask") || hasTask(f.bodies, `"cc"`) {
 		t.Errorf("tasks = %v", f.bodies)
+	}
+	if len(m.Warnings) != 1 || !strings.Contains(m.Warnings[0], "dd") {
+		t.Errorf("warnings = %v", m.Warnings)
 	}
 	if len(m.Nodes) != 3 || m.Nodes[1].Label != "Sensor" || m.Nodes[1].Kind != "child" || m.Nodes[2].Label != "dd" {
 		t.Fatalf("nodes = %+v", m.Nodes)
@@ -209,6 +243,28 @@ func TestToRouterIgnoresIndirectRoutes(t *testing.T) {
 	}
 	if r.id != 59 || len(r.linksTo) != 1 || r.linksTo[8] != 1 {
 		t.Errorf("router = %+v", r)
+	}
+}
+
+func TestResolved(t *testing.T) {
+	addr := netip.MustParseAddr("fd00::1")
+	ptr := record{"_hap._udp.local", typePTR, "Lamp._hap._udp.local"}
+	srv := record{"Lamp._hap._udp.local", typeSRV, "lamp.local"}
+	aaaa := record{"lamp.local", typeAAAA, addr.String()}
+	for _, c := range []struct {
+		records []record
+		want    []netip.Addr
+		done    bool
+	}{
+		{[]record{ptr}, nil, false},
+		{[]record{ptr, srv}, nil, false},
+		{[]record{ptr, srv, aaaa}, nil, true},
+		{[]record{ptr, srv, aaaa}, []netip.Addr{addr, netip.MustParseAddr("fd00::2")}, false},
+		{[]record{ptr, srv, aaaa}, []netip.Addr{addr}, true},
+	} {
+		if got := resolved(c.records, c.want); got != c.done {
+			t.Errorf("resolved(%v, %v) = %v", c.records, c.want, got)
+		}
 	}
 }
 

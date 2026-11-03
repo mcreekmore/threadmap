@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"sync"
@@ -67,9 +68,9 @@ func main() {
 		log.Fatal(err)
 	}
 	border := borderRouter{base: restBase}
-	discover := func(ctx context.Context) []service {
+	discover := func(ctx context.Context, want <-chan []netip.Addr) []service {
 		start := time.Now()
-		services := browse(ctx)
+		services := browse(ctx, want)
 		log.Printf("timing: mDNS done at %v", time.Since(start))
 		names := matterNames(ctx, coreAPI, os.Getenv("SUPERVISOR_TOKEN"))
 		log.Printf("timing: HA names done at %v", time.Since(start))

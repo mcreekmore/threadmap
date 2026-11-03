@@ -20,7 +20,7 @@ const (
 	requestLimit = 15 * time.Second
 	taskLimit    = 60 * time.Second
 	discoverTask = `{"maxAge":30,"maxRetries":3,"deviceCount":1,"timeout":10}`
-	diagTask     = `{"destination":%q,"types":["extAddress","rloc16","route",%q],"timeout":10}`
+	diagTask     = `{"destination":%q,"types":["extAddress","rloc16","route","leaderData",%q],"timeout":10}`
 	reachMsg     = "can't reach the border router's REST API. Is the OpenThread Border Router add-on started?"
 )
 
@@ -102,11 +102,8 @@ type device struct {
 	ID         string `json:"id"`
 	Type       string `json:"type"`
 	Attributes struct {
-		Role       string     `json:"role"`
-		OMR        netip.Addr `json:"omrIpv6Address"`
-		LeaderData *struct {
-			LeaderRouterID int `json:"leaderRouterId"`
-		} `json:"leaderData"`
+		Role string     `json:"role"`
+		OMR  netip.Addr `json:"omrIpv6Address"`
 	} `json:"attributes"`
 }
 
@@ -120,7 +117,10 @@ type diagnostic struct {
 	Attributes struct {
 		ExtAddress string `json:"extAddress"`
 		Rloc16     string `json:"rloc16"`
-		Route      struct {
+		LeaderData *struct {
+			LeaderRouterID int `json:"leaderRouterId"`
+		} `json:"leaderData"`
+		Route struct {
 			RouteData []route `json:"routeData"`
 		} `json:"route"`
 		ChildTable []json.RawMessage `json:"childTable"`
@@ -176,58 +176,99 @@ func (b borderRouter) diagnose(ctx context.Context, id, childField string) (stri
 	return b.runTask(ctx, "getNetworkDiagnosticTask", fmt.Sprintf(diagTask, id, childField))
 }
 
+// survey is one pass over the routers in OTBR's device collection.
+type survey struct {
+	routers  []router
+	omrs     map[string]netip.Addr
+	warnings []string
+	missing  []string // What the device collection lacked; discovery may fill it in.
+}
+
 // scan reads topology over REST and names from discover, which runs alongside to keep the scan short.
-func (b borderRouter) scan(ctx context.Context, discover func(context.Context) []service) (meshMap, error) {
-	var warnings []string
-	warnf := func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }
-
+// discover is sent the addresses it should name, so it can stop once it has them all.
+func (b borderRouter) scan(ctx context.Context, discover func(context.Context, <-chan []netip.Addr) []service) (meshMap, error) {
 	start := time.Now()
+	want := make(chan []netip.Addr, 1)
 	found := make(chan []service, 1)
-	go func() { found <- discover(ctx) }()
+	go func() { found <- discover(ctx, want) }()
 
-	// Results from earlier scans would otherwise be read back as current.
-	if err := b.call(ctx, http.MethodDelete, "/api/diagnostics", "", nil); err != nil {
-		return meshMap{}, err
-	}
-	status, err := b.runTask(ctx, "updateDeviceCollectionTask", discoverTask)
+	s, err := b.survey(ctx)
 	if err != nil {
 		return meshMap{}, err
 	}
-	if status != "completed" {
-		warnf("Device discovery ended as %q, so some devices may be missing.", status)
+	log.Printf("timing: survey done at %v", time.Since(start))
+	var warnings []string
+	// Discovery never finishes before OTBR's 10s timeout on some meshes, so only run it when the collection falls short.
+	if len(s.missing) > 0 {
+		status, err := b.runTask(ctx, "updateDeviceCollectionTask", discoverTask)
+		if err != nil {
+			return meshMap{}, err
+		}
+		if status != "completed" {
+			warnings = append(warnings, fmt.Sprintf("Device discovery ended as %q, so some devices may be missing.", status))
+		}
+		if s, err = b.survey(ctx); err != nil {
+			return meshMap{}, err
+		}
+		log.Printf("timing: discovery and second survey done at %v", time.Since(start))
+	}
+	if len(s.routers) == 0 {
+		return meshMap{}, errors.New("no router reported its links")
 	}
 
-	log.Printf("timing: device discovery done at %v", time.Since(start))
+	var addrs []netip.Addr
+	for _, r := range s.routers {
+		if !r.border {
+			addrs = append(addrs, s.omrs[r.mac])
+		}
+		for _, c := range r.children {
+			addrs = append(addrs, s.omrs[c.mac])
+		}
+	}
+	want <- addrs
+	services := <-found
+	log.Printf("timing: scan done at %v", time.Since(start))
+	m := buildMap(s.routers, s.omrs, services)
+	m.Warnings = append(m.Warnings, warnings...)
+	m.Warnings = append(m.Warnings, s.warnings...)
+	m.Warnings = append(m.Warnings, s.missing...)
+	return m, nil
+}
+
+// survey diagnoses every router in OTBR's device collection, which persists between scans.
+func (b borderRouter) survey(ctx context.Context) (survey, error) {
+	s := survey{omrs: map[string]netip.Addr{}}
+	warnf := func(format string, args ...any) { s.warnings = append(s.warnings, fmt.Sprintf(format, args...)) }
+
+	// Results from earlier scans would otherwise be read back as current.
+	if err := b.call(ctx, http.MethodDelete, "/api/diagnostics", "", nil); err != nil {
+		return s, err
+	}
 	var devices struct{ Data []device }
 	if err := b.call(ctx, http.MethodGet, "/api/devices", "", &devices); err != nil {
-		return meshMap{}, err
+		return s, err
 	}
-	omrs := map[string]netip.Addr{}
-	border, leaderID := "", -1
+	border := ""
 	for _, d := range devices.Data {
-		omrs[d.ID] = d.Attributes.OMR
+		s.omrs[d.ID] = d.Attributes.OMR
 		if d.Type == "threadBorderRouter" {
 			border = d.ID
-			if d.Attributes.LeaderData != nil {
-				leaderID = d.Attributes.LeaderData.LeaderRouterID
-			}
 		}
 		if d.Attributes.Role == "child" {
 			continue
 		}
 		status, err := b.diagnose(ctx, d.ID, "childTable")
 		if err != nil {
-			return meshMap{}, err
+			return s, err
 		}
 		if status != "completed" {
 			warnf("Router %s didn't report its links (%s).", d.ID, status)
 		}
 	}
 
-	log.Printf("timing: router diagnostics done at %v", time.Since(start))
 	var diagnostics struct{ Data []diagnostic }
 	if err := b.call(ctx, http.MethodGet, "/api/diagnostics", "", &diagnostics); err != nil {
-		return meshMap{}, err
+		return s, err
 	}
 	// children has MACs, but costs a full timeout on routers that don't answer it, so only ask when needed.
 	asked := false
@@ -235,7 +276,7 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 		if len(d.Attributes.ChildTable) > 0 {
 			asked = true
 			if status, err := b.diagnose(ctx, d.Attributes.ExtAddress, "children"); err != nil {
-				return meshMap{}, err
+				return s, err
 			} else if status != "completed" {
 				warnf("Router %s didn't report its children (%s).", d.Attributes.ExtAddress, status)
 			}
@@ -243,12 +284,17 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 	}
 	if asked {
 		if err := b.call(ctx, http.MethodGet, "/api/diagnostics", "", &diagnostics); err != nil {
-			return meshMap{}, err
+			return s, err
 		}
 	}
 
-	log.Printf("timing: children diagnostics done at %v", time.Since(start))
-	var routers []router
+	leaderID := -1
+	for _, d := range diagnostics.Data {
+		if d.Attributes.LeaderData != nil {
+			leaderID = d.Attributes.LeaderData.LeaderRouterID
+		}
+	}
+	reported := map[int]bool{}
 	for _, d := range diagnostics.Data {
 		r, err := toRouter(d)
 		if err != nil {
@@ -257,15 +303,29 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 		}
 		r.border = r.mac == border
 		r.leader = r.id == leaderID
-		routers = append(routers, r)
-	}
-	if len(routers) == 0 {
-		return meshMap{}, errors.New("no router reported its links")
+		s.routers = append(s.routers, r)
+		reported[r.id] = true
 	}
 
-	services := <-found
-	log.Printf("timing: scan done at %v", time.Since(start))
-	m := buildMap(routers, omrs, services)
-	m.Warnings = append(m.Warnings, warnings...)
-	return m, nil
+	// Every router lists every router ID in use, so any ID that didn't report is one the collection lacks.
+	missed := map[int]bool{}
+	for _, d := range diagnostics.Data {
+		for _, route := range d.Attributes.Route.RouteData {
+			if !reported[route.RouteID] && !missed[route.RouteID] {
+				missed[route.RouteID] = true
+				s.missing = append(s.missing, fmt.Sprintf("Router %s didn't report its links.", rlocString(uint16(route.RouteID<<10))))
+			}
+		}
+	}
+	for _, r := range s.routers {
+		for _, c := range r.children {
+			if !s.omrs[c.mac].IsValid() {
+				s.missing = append(s.missing, fmt.Sprintf("Child %s has no known address, so it can't be named.", c.mac))
+			}
+		}
+	}
+	if len(s.routers) == 0 {
+		s.missing = append(s.missing, "No router reported its links.")
+	}
+	return s, nil
 }
