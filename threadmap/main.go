@@ -68,7 +68,12 @@ func main() {
 	}
 	border := borderRouter{base: restBase}
 	discover := func(ctx context.Context) []service {
-		return nameMatter(browse(ctx), matterNames(ctx, coreAPI, os.Getenv("SUPERVISOR_TOKEN")))
+		start := time.Now()
+		services := browse(ctx)
+		log.Printf("timing: mDNS done at %v", time.Since(start))
+		names := matterNames(ctx, coreAPI, os.Getenv("SUPERVISOR_TOKEN"))
+		log.Printf("timing: HA names done at %v", time.Since(start))
+		return nameMatter(services, names)
 	}
 	scan := func(ctx context.Context) (meshMap, error) { return border.scan(ctx, discover) }
 	log.Printf("listening on %s", listenAddr)

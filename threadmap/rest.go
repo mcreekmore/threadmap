@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -180,6 +181,7 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 	var warnings []string
 	warnf := func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }
 
+	start := time.Now()
 	found := make(chan []service, 1)
 	go func() { found <- discover(ctx) }()
 
@@ -195,6 +197,7 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 		warnf("Device discovery ended as %q, so some devices may be missing.", status)
 	}
 
+	log.Printf("timing: device discovery done at %v", time.Since(start))
 	var devices struct{ Data []device }
 	if err := b.call(ctx, http.MethodGet, "/api/devices", "", &devices); err != nil {
 		return meshMap{}, err
@@ -221,6 +224,7 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 		}
 	}
 
+	log.Printf("timing: router diagnostics done at %v", time.Since(start))
 	var diagnostics struct{ Data []diagnostic }
 	if err := b.call(ctx, http.MethodGet, "/api/diagnostics", "", &diagnostics); err != nil {
 		return meshMap{}, err
@@ -243,6 +247,7 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 		}
 	}
 
+	log.Printf("timing: children diagnostics done at %v", time.Since(start))
 	var routers []router
 	for _, d := range diagnostics.Data {
 		r, err := toRouter(d)
@@ -258,7 +263,9 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context) [
 		return meshMap{}, errors.New("no router reported its links")
 	}
 
-	m := buildMap(routers, omrs, <-found)
+	services := <-found
+	log.Printf("timing: scan done at %v", time.Since(start))
+	m := buildMap(routers, omrs, services)
 	m.Warnings = append(m.Warnings, warnings...)
 	return m, nil
 }
