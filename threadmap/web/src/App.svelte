@@ -1,7 +1,7 @@
 <script lang="ts">
   import DeviceTable from './DeviceTable.svelte'
   import MeshGraph from './MeshGraph.svelte'
-  import { qualities, type MeshMap } from './types'
+  import { nodeID, qualities, type MeshMap } from './types'
 
   const savedKey = 'threadmap-last-map'
 
@@ -17,6 +17,7 @@
   let error = $state('')
   let status = $state('')
   let scanning = $state(false)
+  let graph = $state<MeshGraph>()
 
   async function refresh() {
     scanning = true
@@ -68,7 +69,7 @@
   {/if}
 
   {#if map}
-    <MeshGraph nodes={map.nodes} links={map.links} />
+    <MeshGraph bind:this={graph} nodes={map.nodes} links={map.links} />
 
     <div class="legend">
       {#each qualities as { level, name, meaning }}
@@ -86,7 +87,7 @@
       </ul>
     {/if}
 
-    <DeviceTable nodes={map.nodes} />
+    <DeviceTable nodes={map.nodes} onselect={(node) => graph?.pin(nodeID(node))} />
   {/if}
 </main>
 

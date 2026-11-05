@@ -5,6 +5,7 @@
 
   let { nodes, links }: { nodes: Device[]; links: Link[] } = $props()
   let container: HTMLDivElement
+  let graph: cytoscape.Core | undefined
 
   // The device whose card is showing. Hovering shows it; tapping pins it so its link can be clicked.
   let selected = $state<string | null>(null)
@@ -18,6 +19,20 @@
   // Beside the node, kept inside the graph's width; above the node when there's no room below it.
   const cardLeft = $derived(Math.max(8, Math.min(anchor.x + 20, wrapWidth - cardWidth - 8)))
   const cardTop = $derived(anchor.y + 20 + cardHeight > graphHeight ? Math.max(8, anchor.y - 20 - cardHeight) : anchor.y + 20)
+
+  function show(node: cytoscape.NodeSingular) {
+    selected = node.id()
+    anchor = { ...node.renderedPosition() }
+  }
+
+  // Pins a device's card as if its node was tapped, for picking a device outside the graph.
+  export function pin(id: string) {
+    const node = graph?.getElementById(id)
+    if (!node?.length) return
+    pinned = true
+    show(node)
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
 
   // Kept across refreshes so the map doesn't rearrange itself or undo your dragging.
   const positions = new Map<string, cytoscape.Position>()
@@ -122,10 +137,7 @@
       cy.fit(undefined, 50)
     })
 
-    const show = (node: cytoscape.NodeSingular) => {
-      selected = node.id()
-      anchor = { ...node.renderedPosition() }
-    }
+    graph = cy
     cy.on('mouseover', 'node', (e) => !pinned && show(e.target))
     cy.on('mouseout', 'node', () => !pinned && (selected = null))
     cy.on('tap', 'node', (e) => {
@@ -148,6 +160,7 @@
     dark.addEventListener('change', restyle)
 
     return () => {
+      graph = undefined
       selected = null
       pinned = false
       dark.removeEventListener('change', restyle)
