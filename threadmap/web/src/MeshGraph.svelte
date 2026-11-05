@@ -1,21 +1,42 @@
 <script lang="ts">
   import cytoscape from 'cytoscape'
-  import type { Device, Link } from './types'
+  import DeviceCard from './DeviceCard.svelte'
+  import { role, type Device, type Link } from './types'
 
   let { nodes, links }: { nodes: Device[]; links: Link[] } = $props()
   let container: HTMLDivElement
+
+  // The device whose card is showing. Hovering shows it; tapping pins it so its link can be clicked.
+  let selected = $state<string | null>(null)
+  let pinned = false
+  let anchor = $state({ x: 0, y: 0 }) // the selected node's position on screen
+  let wrapWidth = $state(0)
+  let graphHeight = $state(0)
+  let cardHeight = $state(0)
+  const device = $derived(nodes.find((n) => n.rloc === selected))
+  const cardWidth = $derived(Math.min(280, wrapWidth - 16))
+  // Beside the node, kept inside the graph's width; above the node when there's no room below it.
+  const cardLeft = $derived(Math.max(8, Math.min(anchor.x + 20, wrapWidth - cardWidth - 8)))
+  const cardTop = $derived(anchor.y + 20 + cardHeight > graphHeight ? Math.max(8, anchor.y - 20 - cardHeight) : anchor.y + 20)
 
   // Kept across refreshes so the map doesn't rearrange itself or undo your dragging.
   const positions = new Map<string, cytoscape.Position>()
 
   function elements() {
+    const children = new Set(nodes.filter((n) => n.kind === 'child').map((n) => n.rloc))
     return [
       ...nodes.map((n) => ({
-        data: { id: n.rloc, text: n.leader ? `${n.label}\nLeader` : n.label, kind: n.kind, border: n.border === true },
+        data: { id: n.rloc, text: `${n.label}\n${role(n)}`, kind: n.kind, border: n.border === true },
         position: positions.get(n.rloc),
       })),
       ...links.map((l) => ({
-        data: { source: l.a, target: l.b, quality: l.quality, text: `q${l.quality}` },
+        data: {
+          source: l.a,
+          target: l.b,
+          quality: l.quality,
+          text: `q${l.quality}`,
+          toChild: children.has(l.a) || children.has(l.b),
+        },
       })),
     ]
   }
@@ -56,6 +77,7 @@
           'text-outline-width': 3,
         },
       },
+      { selector: 'edge[?toChild]', style: { 'line-style': 'dashed' } },
       { selector: 'edge[quality = 3]', style: { 'line-color': color('--q3') } },
       { selector: 'edge[quality = 2]', style: { 'line-color': color('--q2') } },
       { selector: 'edge[quality = 1]', style: { 'line-color': color('--q1') } },
@@ -86,11 +108,34 @@
       maxZoom: 1.25,
     })
 
+    const show = (node: cytoscape.NodeSingular) => {
+      selected = node.id()
+      anchor = { ...node.renderedPosition() }
+    }
+    cy.on('mouseover', 'node', (e) => !pinned && show(e.target))
+    cy.on('mouseout', 'node', () => !pinned && (selected = null))
+    cy.on('tap', 'node', (e) => {
+      pinned = true
+      show(e.target)
+    })
+    cy.on('tap', (e) => {
+      if (e.target === cy) {
+        pinned = false
+        selected = null
+      }
+    })
+    // Keep the card next to its node while the graph is panned, zoomed or the node dragged.
+    cy.on('viewport position', () => {
+      if (selected) show(cy.getElementById(selected))
+    })
+
     const dark = window.matchMedia('(prefers-color-scheme: dark)')
     const restyle = () => cy.style(graphStyle())
     dark.addEventListener('change', restyle)
 
     return () => {
+      selected = null
+      pinned = false
       dark.removeEventListener('change', restyle)
       cy.nodes().forEach((n) => {
         positions.set(n.id(), { ...n.position() })
@@ -100,16 +145,34 @@
   })
 </script>
 
-<div
-  class="panel graph"
-  bind:this={container}
-  role="img"
-  aria-label="Diagram of Thread devices and their links; the same devices are listed in the table below"
-></div>
+<div class="wrap" bind:clientWidth={wrapWidth}>
+  <div
+    class="panel graph"
+    bind:this={container}
+    bind:clientHeight={graphHeight}
+    onmouseleave={() => !pinned && (selected = null)}
+    role="img"
+    aria-label="Diagram of Thread devices and their links; the same devices are listed in the table below"
+  ></div>
+  {#if device}
+    <div class="popup" style:left="{cardLeft}px" style:top="{cardTop}px" style:width="{cardWidth}px" bind:clientHeight={cardHeight}>
+      <DeviceCard {device} {nodes} {links} />
+    </div>
+  {/if}
+</div>
 
 <style>
+  .wrap {
+    position: relative;
+  }
+
   .graph {
     height: min(62vh, 560px);
     padding: 0;
+  }
+
+  .popup {
+    position: absolute;
+    z-index: 1;
   }
 </style>

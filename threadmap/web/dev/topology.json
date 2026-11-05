@@ -1,17 +1,30 @@
 {
   "nodes": [
-    { "rloc": "0x0400", "label": "Kitchen Plug", "mac": "aaaa000000000001", "kind": "router" },
-    { "rloc": "0x0401", "label": "Door Sensor", "kind": "child" },
+    {
+      "rloc": "0x0400",
+      "label": "Kitchen Plug",
+      "mac": "aaaa000000000001",
+      "kind": "router",
+      "omr": "fd00:db8:1:1:aaaa:1:2:3",
+      "ha": { "id": "sample-kitchen-plug", "name": "Kitchen Plug", "manufacturer": "Eve", "model": "Energy", "firmware": "3.2.1", "area": "Kitchen" }
+    },
+    {
+      "rloc": "0x0401",
+      "label": "Door Sensor",
+      "kind": "child",
+      "omr": "fd00:db8:1:1:dddd:1:2:3",
+      "ha": { "id": "sample-door-sensor", "name": "Door Sensor", "manufacturer": "Eve", "model": "Door & Window", "area": "Hallway" }
+    },
     { "rloc": "0x0402", "label": "0x0402", "kind": "child" },
-    { "rloc": "0xec00", "label": "Test Humidifier 0001", "mac": "1111222233334444", "kind": "router" },
+    { "rloc": "0xec00", "label": "Test Humidifier 0001", "mac": "1111222233334444", "kind": "router", "omr": "fd00:db8:1:1:1111:2222:3333:4444" },
     { "rloc": "0xf400", "label": "Border router", "mac": "aaaabbbbccccdddd", "kind": "router", "leader": true, "border": true }
   ],
   "links": [
-    { "a": "0x0400", "b": "0x0401", "quality": 2 },
-    { "a": "0x0400", "b": "0x0402", "quality": 1 },
-    { "a": "0x0400", "b": "0xec00", "quality": 2 },
-    { "a": "0x0400", "b": "0xf400", "quality": 1 },
-    { "a": "0xec00", "b": "0xf400", "quality": 3 }
+    { "a": "0x0400", "b": "0x0401", "quality": 2, "bToA": 2, "margin": 14 },
+    { "a": "0x0400", "b": "0x0402", "quality": 1, "bToA": 1, "margin": 5 },
+    { "a": "0x0400", "b": "0xec00", "quality": 2, "aToB": 2, "bToA": 2 },
+    { "a": "0x0400", "b": "0xf400", "quality": 1, "aToB": 3, "bToA": 1 },
+    { "a": "0xec00", "b": "0xf400", "quality": 3, "aToB": 3, "bToA": 3 }
   ],
   "warnings": ["Bedroom Sensor is registered but wasn't located in the mesh; it may be asleep or offline."]
 }

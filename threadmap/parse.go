@@ -14,36 +14,43 @@ type router struct {
 	mac      string
 	leader   bool
 	border   bool
-	linksTo  map[int]int // router ID -> link quality
+	linksTo  map[int]route // router ID -> link qualities in both directions
 	children []child
 }
 
 type child struct {
-	rloc    uint16
-	mac     string
-	quality int
+	rloc   uint16
+	mac    string
+	margin int // dB, as the parent hears the child
 }
 
 type service struct {
 	name   string
 	addrs  []netip.Addr
-	matter bool // name is a Matter "<fabric ID>-<node ID>", not a friendly name
+	matter bool      // name is a Matter "<fabric ID>-<node ID>", not a friendly name
+	ha     *haDevice // set once a Matter name is matched to HA
 }
 
 type node struct {
-	RLOC   string `json:"rloc"`
-	Label  string `json:"label"`
-	MAC    string `json:"mac,omitempty"`
-	Kind   string `json:"kind"` // router or child
-	Leader bool   `json:"leader,omitempty"`
-	Border bool   `json:"border,omitempty"`
+	RLOC   string     `json:"rloc"`
+	Label  string     `json:"label"`
+	MAC    string     `json:"mac,omitempty"`
+	Kind   string     `json:"kind"` // router or child
+	Leader bool       `json:"leader,omitempty"`
+	Border bool       `json:"border,omitempty"`
+	OMR    netip.Addr `json:"omr,omitzero"`
+	HA     *haDevice  `json:"ha,omitempty"`
 	names  []string
 }
 
 type link struct {
 	A       string `json:"a"`
 	B       string `json:"b"`
-	Quality int    `json:"quality"`
+	Quality int    `json:"quality"` // the weaker direction
+	// Router links know both directions. Child links know only how the parent (A) hears the child (B).
+	AToB   *int `json:"aToB,omitempty"`
+	BToA   *int `json:"bToA,omitempty"`
+	Margin *int `json:"margin,omitempty"` // dB
 }
 
 type meshMap struct {
@@ -66,13 +73,15 @@ func buildMap(routers []router, omrs map[string]netip.Addr, services []service) 
 		for _, c := range r.children {
 			n := &node{RLOC: rlocString(c.rloc), MAC: c.mac, Kind: "child"}
 			m.Nodes = append(m.Nodes, n)
-			m.Links = append(m.Links, link{A: rlocString(r.rloc), B: n.RLOC, Quality: c.quality})
+			quality := marginQuality(c.margin)
+			m.Links = append(m.Links, link{A: rlocString(r.rloc), B: n.RLOC, Quality: quality, BToA: &quality, Margin: &c.margin})
 		}
 	}
 
 	byAddr := map[netip.Addr]*node{}
 	for _, n := range m.Nodes {
-		byAddr[omrs[n.MAC]] = n
+		n.OMR = omrs[n.MAC]
+		byAddr[n.OMR] = n
 	}
 	prefixes := map[netip.Prefix]bool{}
 	for _, addr := range omrs {
@@ -90,6 +99,9 @@ func buildMap(routers []router, omrs map[string]netip.Addr, services []service) 
 				located = true
 				if !slices.Contains(n.names, s.name) {
 					n.names = append(n.names, s.name)
+				}
+				if n.HA == nil {
+					n.HA = s.ha
 				}
 			}
 		}
@@ -110,21 +122,26 @@ func buildMap(routers []router, omrs map[string]netip.Addr, services []service) 
 		}
 	}
 
-	// Each router reports the link separately, so keep one edge at the lower reported quality.
-	lowest := map[[2]int]int{}
+	// Both ends of a link report it, so keep the lower reported quality for each direction.
+	lowest := map[[2]int]int{} // [from, to] router IDs -> quality
+	keep := func(from, to, quality int) {
+		if q, seen := lowest[[2]int{from, to}]; !seen || quality < q {
+			lowest[[2]int{from, to}] = quality
+		}
+	}
 	for _, r := range routers {
-		for to, quality := range r.linksTo {
-			if _, known := rlocByID[to]; !known {
-				continue
-			}
-			pair := [2]int{min(r.id, to), max(r.id, to)}
-			if q, seen := lowest[pair]; !seen || quality < q {
-				lowest[pair] = quality
+		for to, route := range r.linksTo {
+			if _, known := rlocByID[to]; known {
+				keep(r.id, to, route.Out)
+				keep(to, r.id, route.In)
 			}
 		}
 	}
-	for pair, quality := range lowest {
-		m.Links = append(m.Links, link{A: rlocString(rlocByID[pair[0]]), B: rlocString(rlocByID[pair[1]]), Quality: quality})
+	for pair, aToB := range lowest {
+		if pair[0] < pair[1] {
+			bToA := lowest[[2]int{pair[1], pair[0]}]
+			m.Links = append(m.Links, link{A: rlocString(rlocByID[pair[0]]), B: rlocString(rlocByID[pair[1]]), Quality: min(aToB, bToA), AToB: &aToB, BToA: &bToA})
+		}
 	}
 
 	sort.Slice(m.Nodes, func(i, j int) bool { return m.Nodes[i].RLOC < m.Nodes[j].RLOC })

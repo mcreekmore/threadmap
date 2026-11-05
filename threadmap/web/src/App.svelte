@@ -1,20 +1,9 @@
 <script lang="ts">
   import DeviceTable from './DeviceTable.svelte'
   import MeshGraph from './MeshGraph.svelte'
-  import type { MeshMap } from './types'
+  import { qualities, type MeshMap } from './types'
 
   const savedKey = 'threadmap-last-map'
-
-  const qualities = [
-    { level: 3, name: 'Good', meaning: 'More than 20 dB of link margin' },
-    { level: 2, name: 'Reasonable', meaning: 'More than 10 dB of link margin' },
-    { level: 1, name: 'Poor', meaning: 'More than 2 dB of link margin' },
-    {
-      level: 0,
-      name: 'None',
-      meaning: 'Heard in one direction only, or 2 dB of link margin or less',
-    },
-  ]
 
   function lastMap(): MeshMap | null {
     try {

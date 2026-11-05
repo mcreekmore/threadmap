@@ -160,16 +160,16 @@ func toRouter(d diagnostic) (router, error) {
 	if err != nil {
 		return router{}, fmt.Errorf("rloc16 %q: %w", a.Rloc16, err)
 	}
-	r := router{id: int(rloc >> 10), rloc: rloc, mac: a.ExtAddress, linksTo: map[int]int{}}
+	r := router{id: int(rloc >> 10), rloc: rloc, mac: a.ExtAddress, linksTo: map[int]route{}}
 	for _, route := range a.Route.RouteData {
 		// Route data lists every router, including itself; both qualities at 0 means no direct link.
 		if route.RouteID != r.id && (route.In > 0 || route.Out > 0) {
-			r.linksTo[route.RouteID] = min(route.In, route.Out)
+			r.linksTo[route.RouteID] = route
 		}
 	}
 	for _, c := range a.Children {
 		if childRLOC, err := parseRLOC(c.Rloc16); err == nil {
-			r.children = append(r.children, child{childRLOC, c.ExtAddress, marginQuality(c.LinkMargin)})
+			r.children = append(r.children, child{childRLOC, c.ExtAddress, c.LinkMargin})
 		}
 	}
 	return r, nil

@@ -72,9 +72,9 @@ func main() {
 		start := time.Now()
 		services := browse(ctx, want)
 		log.Printf("timing: mDNS done at %v", time.Since(start))
-		names := matterNames(ctx, coreAPI, os.Getenv("SUPERVISOR_TOKEN"))
+		devices := matterDevices(ctx, coreAPI, os.Getenv("SUPERVISOR_TOKEN"))
 		log.Printf("timing: HA names done at %v", time.Since(start))
-		return nameMatter(services, names)
+		return nameMatter(services, devices)
 	}
 	scan := func(ctx context.Context) (meshMap, error) { return border.scan(ctx, discover) }
 	log.Printf("listening on %s", listenAddr)

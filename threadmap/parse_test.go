@@ -205,8 +205,10 @@ func TestChildFromDiagnostics(t *testing.T) {
 	if len(m.Nodes) != 3 || m.Nodes[1].Label != "Sensor" || m.Nodes[1].Kind != "child" || m.Nodes[2].Label != "Presence" {
 		t.Fatalf("nodes = %+v", m.Nodes)
 	}
-	if m.Links[0] != (link{"0x0400", "0x0401", 3}) || m.Links[1] != (link{"0x0400", "0x0402", 1}) {
-		t.Errorf("links = %+v", m.Links)
+	for i, want := range []link{{A: "0x0400", B: "0x0401", Quality: 3}, {A: "0x0400", B: "0x0402", Quality: 1}} {
+		if l := m.Links[i]; l.A != want.A || l.B != want.B || l.Quality != want.Quality || l.Margin == nil || l.AToB != nil {
+			t.Errorf("link %d = %+v", i, l)
+		}
 	}
 }
 
@@ -228,7 +230,7 @@ func TestChildWithoutAddressTriggersDiscovery(t *testing.T) {
 }
 
 func TestBuildMapWarnsOnlyForUnlocatedThreadServices(t *testing.T) {
-	routers := []router{{id: 1, rloc: 0x0400, mac: "aa", linksTo: map[int]int{}}}
+	routers := []router{{id: 1, rloc: 0x0400, mac: "aa", linksTo: map[int]route{}}}
 	omrs := map[string]netip.Addr{"aa": netip.MustParseAddr("fd00:1:2:3::a")}
 	services := []service{
 		{name: "Sleepy", addrs: []netip.Addr{netip.MustParseAddr("fd00:1:2:3::b")}},
@@ -243,13 +245,29 @@ func TestBuildMapWarnsOnlyForUnlocatedThreadServices(t *testing.T) {
 	}
 }
 
+func TestBuildMapCarriesAddressAndHADevice(t *testing.T) {
+	routers := []router{{id: 1, rloc: 0x0400, mac: "aa", linksTo: map[int]route{}}, {id: 2, rloc: 0x0800, mac: "bb", linksTo: map[int]route{}}}
+	omrs := map[string]netip.Addr{"aa": netip.MustParseAddr("fd00::a")}
+	services := []service{{name: "Plug", addrs: []netip.Addr{netip.MustParseAddr("fd00::a")}, ha: &haDevice{ID: "d1", Name: "Plug"}}}
+	out, err := json.Marshal(buildMap(routers, omrs, services).Nodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// bb has no known address or HA device, so it has neither field.
+	want := `[{"rloc":"0x0400","label":"Plug","mac":"aa","kind":"router","omr":"fd00::a","ha":{"id":"d1","name":"Plug"}},{"rloc":"0x0800","label":"bb","mac":"bb","kind":"router"}]`
+	if string(out) != want {
+		t.Errorf("nodes = %s", out)
+	}
+}
+
 func TestBuildMapKeepsLowerLinkQuality(t *testing.T) {
 	routers := []router{
-		{id: 1, rloc: 0x0400, mac: "aa", linksTo: map[int]int{2: 3, 9: 3}},
-		{id: 2, rloc: 0x0800, mac: "bb", linksTo: map[int]int{1: 1}},
+		{id: 1, rloc: 0x0400, mac: "aa", linksTo: map[int]route{2: {In: 3, Out: 3}, 9: {In: 3, Out: 3}}},
+		{id: 2, rloc: 0x0800, mac: "bb", linksTo: map[int]route{1: {In: 1, Out: 3}}},
 	}
 	m := buildMap(routers, nil, nil)
-	if len(m.Links) != 1 || m.Links[0].Quality != 1 {
+	// Router 2 hears router 1 at quality 1, though router 1 reported its sending side as 3.
+	if len(m.Links) != 1 || m.Links[0].Quality != 1 || *m.Links[0].AToB != 1 || *m.Links[0].BToA != 3 {
 		t.Errorf("links = %+v", m.Links)
 	}
 }
@@ -262,7 +280,7 @@ func TestToRouterIgnoresIndirectRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.id != 59 || len(r.linksTo) != 1 || r.linksTo[8] != 1 {
+	if r.id != 59 || len(r.linksTo) != 1 || r.linksTo[8] != (route{RouteID: 8, Out: 1, In: 3}) {
 		t.Errorf("router = %+v", r)
 	}
 }
