@@ -28,7 +28,8 @@ type service struct {
 	name   string
 	addrs  []netip.Addr
 	matter bool      // name is a Matter "<fabric ID>-<node ID>", not a friendly name
-	ha     *haDevice // set once a Matter name is matched to HA
+	hapID  string    // HomeKit pairing ID, from the TXT record
+	ha     *haDevice // set once matched to an HA device
 }
 
 type node struct {

@@ -15,6 +15,7 @@ import (
 
 const (
 	typePTR  = 12
+	typeTXT  = 16
 	typeAAAA = 28
 	typeSRV  = 33
 )
@@ -27,7 +28,7 @@ const browseLimit = 6 * time.Second
 type record struct {
 	name  string
 	kind  uint16
-	value string
+	value string // for TXT, only a HomeKit pairing ID
 }
 
 // browse asks the LAN which Thread services exist; the border router republishes them there from SRP.
@@ -84,6 +85,10 @@ func browse(ctx context.Context, want <-chan []netip.Addr) []service {
 			switch r.kind {
 			case typePTR:
 				send(r.value, typeSRV)
+				// HomeKit's pairing ID, which HA knows the device by. Not waited for, as names don't need it.
+				if strings.HasSuffix(r.value, "._hap._udp.local") {
+					send(r.value, typeTXT)
+				}
 			case typeSRV:
 				send(r.value, typeAAAA)
 			}
@@ -176,13 +181,24 @@ func toServices(records []record) []service {
 			addrs[host] = append(addrs[host], addr)
 		}
 	}
+	hapIDs := map[string]string{}
+	for _, r := range records {
+		if r.kind == typeTXT {
+			hapIDs[strings.ToLower(r.name)] = r.value
+		}
+	}
 	var services []service
 	seen := map[string]bool{}
 	for _, r := range records {
 		for _, t := range serviceTypes {
 			if name, ok := strings.CutSuffix(r.name, "."+t); ok && r.kind == typeSRV && !seen[r.name] {
 				seen[r.name] = true
-				services = append(services, service{name: name, addrs: addrs[strings.ToLower(r.value)], matter: t == "_matter._tcp.local"})
+				services = append(services, service{
+					name:   name,
+					addrs:  addrs[strings.ToLower(r.value)],
+					matter: t == "_matter._tcp.local",
+					hapID:  hapIDs[strings.ToLower(r.name)],
+				})
 			}
 		}
 	}
@@ -232,6 +248,7 @@ func parseDNS(d []byte) (out []record, err error) {
 			out, err = nil, fmt.Errorf("bad packet: %v", r)
 		}
 	}()
+	d = d[:len(d):len(d)] // Reading past the packet must fail, not see an earlier packet's bytes left in the buffer.
 	be := binary.BigEndian
 	questions := int(be.Uint16(d[4:]))
 	answers := int(be.Uint16(d[6:])) + int(be.Uint16(d[8:])) + int(be.Uint16(d[10:]))
@@ -256,6 +273,13 @@ func parseDNS(d []byte) (out []record, err error) {
 		case typeAAAA:
 			if addr, ok := netip.AddrFromSlice(d[i : i+length]); ok {
 				out = append(out, record{name, kind, addr.String()})
+			}
+		case typeTXT:
+			// TXT data is a run of length-prefixed "key=value" strings.
+			for j := i; j < i+length; j += 1 + int(d[j]) {
+				if id, ok := strings.CutPrefix(string(d[j+1:j+1+int(d[j])]), "id="); ok {
+					out = append(out, record{name, kind, strings.ToUpper(id)})
+				}
 			}
 		}
 		i += length

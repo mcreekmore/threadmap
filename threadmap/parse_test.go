@@ -308,8 +308,8 @@ func TestResolved(t *testing.T) {
 }
 
 func TestParseDNS(t *testing.T) {
-	// Answers: PTR _hap._udp.local -> "Air 1"._hap._udp.local, SRV -> h.local, AAAA h.local -> fd00::1.
-	p := []byte{0, 0, 0x84, 0, 0, 0, 0, 3, 0, 0, 0, 0}
+	// Answers: PTR _hap._udp.local -> "Air 1"._hap._udp.local, SRV -> h.local, AAAA h.local -> fd00::1, and its TXT.
+	p := []byte{0, 0, 0x84, 0, 0, 0, 0, 4, 0, 0, 0, 0}
 	p = append(p, []byte("\x04_hap\x04_udp\x05local\x00")...) // Offset 12, with "local" at 22.
 	p = append(p, 0, 12, 0, 1, 0, 0, 0, 120, 0, 8)
 	instance := len(p)
@@ -320,6 +320,9 @@ func TestParseDNS(t *testing.T) {
 	p = append(p, 0xC0, byte(host), 0, 28, 0x80, 1, 0, 0, 0, 120, 0, 16)
 	addr, _ := hex.DecodeString("fd000000000000000000000000000001")
 	p = append(p, addr...)
+	txt := "sf=1id=43:3e:01:0f:92:53" // The pairing ID, lower-cased here to check it's normalized.
+	p = append(p, 0xC0, byte(instance), 0, 16, 0x80, 1, 0, 0, 0, 120, 0, byte(len(txt)))
+	p = append(p, txt...)
 
 	got, err := parseDNS(p)
 	if err != nil {
@@ -329,6 +332,7 @@ func TestParseDNS(t *testing.T) {
 		{"_hap._udp.local", typePTR, "Air 1._hap._udp.local"},
 		{"Air 1._hap._udp.local", typeSRV, "h.local"},
 		{"h.local", typeAAAA, "fd00::1"},
+		{"Air 1._hap._udp.local", typeTXT, "43:3E:01:0F:92:53"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %v", got)
@@ -340,7 +344,7 @@ func TestParseDNS(t *testing.T) {
 	}
 
 	services := toServices(append(got, record{"Other._meshcop._udp.local", typeSRV, "h.local"}, got[2]))
-	if len(services) != 1 || services[0].name != "Air 1" || len(services[0].addrs) != 1 {
+	if len(services) != 1 || services[0].name != "Air 1" || len(services[0].addrs) != 1 || services[0].hapID != "43:3E:01:0F:92:53" {
 		t.Errorf("services = %+v", services)
 	}
 
