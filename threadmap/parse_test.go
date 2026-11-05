@@ -176,33 +176,54 @@ func TestScanFailsWithoutRouters(t *testing.T) {
 	}
 }
 
-// Child entries are shaped from the OTBR source, since no real network here has had children yet.
+// Child entries are shaped from a real router's answers: the children task stores a second entry per router.
 func TestChildFromDiagnostics(t *testing.T) {
 	devices := `{"data":[
 		{"id":"aa","type":"threadBorderRouter","attributes":{"role":"router","omrIpv6Address":"fd00::a"}},
 		{"id":"cc","type":"threadDevice","attributes":{"role":"child","omrIpv6Address":"fd00::c"}}]}`
-	diagnostics := `{"data":[{"attributes":{"extAddress":"aa","rloc16":"0x0400","route":{"routeData":[]},"childTable":[{"childId":1},{"childId":2}],
-		"children":[{"rloc16":"0x0401","extAddress":"cc","linkMargin":25},{"rloc16":"0x0402","extAddress":"dd","linkMargin":5}]}}]}`
+	diagnostics := `{"data":[
+		{"attributes":{"extAddress":"aa","rloc16":"0x0400","route":{"routeData":[]},"childTable":[{"childId":1},{"childId":2}]}},
+		{"attributes":{"extAddress":"aa","rloc16":"0x0400","route":{"routeData":[]},
+			"children":[{"rloc16":"0x0401","extAddress":"cc","linkMargin":25},{"rloc16":"0x0402","extAddress":"dd","linkMargin":5}],
+			"childIpv6Addresses":[{"rloc16":"0x0402","ipv6Addresses":["fdde::1","fd00::d"]}]}}]}`
 	f := &fakeREST{devices: devices, diagnostics: diagnostics}
 	sensor := service{name: "Sensor", addrs: []netip.Addr{netip.MustParseAddr("fd00::c")}}
-	m, err := scanFake(t, f, sensor)
+	presence := service{name: "Presence", addrs: []netip.Addr{netip.MustParseAddr("fd00::d")}}
+	m, err := scanFake(t, f, sensor, presence)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// childTable, then children because the table wasn't empty; never the child itself. Child dd has no
-	// cached address, so discovery runs and both are asked again.
-	if len(f.bodies) != 5 || !strings.Contains(f.bodies[0], "childTable") || !strings.Contains(f.bodies[1], `"children"`) ||
-		!strings.Contains(f.bodies[2], "updateDeviceCollectionTask") || hasTask(f.bodies, `"cc"`) {
+	// childTable, then children because the table wasn't empty; never the child itself. dd's address came
+	// from childIpv6Addresses, so the collection was complete and discovery was skipped.
+	if len(f.bodies) != 2 || !strings.Contains(f.bodies[0], "childTable") || !strings.Contains(f.bodies[1], `"children","childIpv6Addresses"`) || hasTask(f.bodies, `"cc"`) {
 		t.Errorf("tasks = %v", f.bodies)
 	}
-	if len(m.Warnings) != 1 || !strings.Contains(m.Warnings[0], "dd") {
+	if len(m.Warnings) != 0 {
 		t.Errorf("warnings = %v", m.Warnings)
 	}
-	if len(m.Nodes) != 3 || m.Nodes[1].Label != "Sensor" || m.Nodes[1].Kind != "child" || m.Nodes[2].Label != "dd" {
+	// One node per router even though it has two entries.
+	if len(m.Nodes) != 3 || m.Nodes[1].Label != "Sensor" || m.Nodes[1].Kind != "child" || m.Nodes[2].Label != "Presence" {
 		t.Fatalf("nodes = %+v", m.Nodes)
 	}
 	if m.Links[0] != (link{"0x0400", "0x0401", 3}) || m.Links[1] != (link{"0x0400", "0x0402", 1}) {
 		t.Errorf("links = %+v", m.Links)
+	}
+}
+
+func TestChildWithoutAddressTriggersDiscovery(t *testing.T) {
+	devices := `{"data":[{"id":"aa","type":"threadBorderRouter","attributes":{"role":"router","omrIpv6Address":"fd00::a"}}]}`
+	diagnostics := `{"data":[{"attributes":{"extAddress":"aa","rloc16":"0x0400","route":{"routeData":[]},"childTable":[{"childId":2}],
+		"children":[{"rloc16":"0x0402","extAddress":"dd","linkMargin":5}]}}]}`
+	f := &fakeREST{devices: devices, diagnostics: diagnostics}
+	m, err := scanFake(t, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.bodies) != 5 || !strings.Contains(f.bodies[2], "updateDeviceCollectionTask") {
+		t.Errorf("tasks = %v", f.bodies)
+	}
+	if len(m.Warnings) != 1 || !strings.Contains(m.Warnings[0], "dd") {
+		t.Errorf("warnings = %v", m.Warnings)
 	}
 }
 

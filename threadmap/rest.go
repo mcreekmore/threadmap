@@ -20,7 +20,7 @@ const (
 	requestLimit = 15 * time.Second
 	taskLimit    = 60 * time.Second
 	discoverTask = `{"maxAge":30,"maxRetries":3,"deviceCount":1,"timeout":10}`
-	diagTask     = `{"destination":%q,"types":["extAddress","rloc16","route","leaderData",%q],"timeout":10}`
+	diagTask     = `{"destination":%q,"types":["extAddress","rloc16","route","leaderData",%s],"timeout":10}`
 	reachMsg     = "can't reach the border router's REST API. Is the OpenThread Border Router add-on started?"
 )
 
@@ -129,6 +129,10 @@ type diagnostic struct {
 			ExtAddress string `json:"extAddress"`
 			LinkMargin int    `json:"linkMargin"`
 		} `json:"children"`
+		ChildIPv6Addresses []struct {
+			Rloc16        string       `json:"rloc16"`
+			IPv6Addresses []netip.Addr `json:"ipv6Addresses"`
+		} `json:"childIpv6Addresses"`
 	} `json:"attributes"`
 }
 
@@ -171,9 +175,9 @@ func toRouter(d diagnostic) (router, error) {
 	return r, nil
 }
 
-// diagnose asks one router for its links plus childTable or children, replacing its stored result.
-func (b borderRouter) diagnose(ctx context.Context, id, childField string) (string, error) {
-	return b.runTask(ctx, "getNetworkDiagnosticTask", fmt.Sprintf(diagTask, id, childField))
+// diagnose asks one router for its links plus childFields, a quoted JSON list such as `"childTable"`.
+func (b borderRouter) diagnose(ctx context.Context, id, childFields string) (string, error) {
+	return b.runTask(ctx, "getNetworkDiagnosticTask", fmt.Sprintf(diagTask, id, childFields))
 }
 
 // survey is one pass over the routers in OTBR's device collection.
@@ -257,7 +261,7 @@ func (b borderRouter) survey(ctx context.Context) (survey, error) {
 		if d.Attributes.Role == "child" {
 			continue
 		}
-		status, err := b.diagnose(ctx, d.ID, "childTable")
+		status, err := b.diagnose(ctx, d.ID, `"childTable"`)
 		if err != nil {
 			return s, err
 		}
@@ -270,12 +274,13 @@ func (b borderRouter) survey(ctx context.Context) (survey, error) {
 	if err := b.call(ctx, http.MethodGet, "/api/diagnostics", "", &diagnostics); err != nil {
 		return s, err
 	}
-	// children has MACs, but costs a full timeout on routers that don't answer it, so only ask when needed.
+	// children has MACs and childIpv6Addresses their addresses, which the device collection often lacks.
+	// They cost a full timeout on routers that don't answer them, so only ask when needed.
 	asked := false
 	for _, d := range diagnostics.Data {
 		if len(d.Attributes.ChildTable) > 0 {
 			asked = true
-			if status, err := b.diagnose(ctx, d.Attributes.ExtAddress, "children"); err != nil {
+			if status, err := b.diagnose(ctx, d.Attributes.ExtAddress, `"children","childIpv6Addresses"`); err != nil {
 				return s, err
 			} else if status != "completed" {
 				warnf("Router %s didn't report its children (%s).", d.Attributes.ExtAddress, status)
@@ -285,6 +290,42 @@ func (b borderRouter) survey(ctx context.Context) (survey, error) {
 	if asked {
 		if err := b.call(ctx, http.MethodGet, "/api/diagnostics", "", &diagnostics); err != nil {
 			return s, err
+		}
+		// Each router now has a second entry with its children; keep only that one.
+		latest := map[string]int{}
+		var kept []diagnostic
+		for _, d := range diagnostics.Data {
+			i, seen := latest[d.Attributes.ExtAddress]
+			switch {
+			case !seen:
+				latest[d.Attributes.ExtAddress] = len(kept)
+				kept = append(kept, d)
+			case len(d.Attributes.Children) > 0:
+				kept[i] = d
+			}
+		}
+		diagnostics.Data = kept
+	}
+
+	// Children's OMR addresses share the /64 of the routers' ones.
+	omrPrefixes := map[netip.Prefix]bool{}
+	for _, addr := range s.omrs {
+		if p, err := addr.Prefix(64); err == nil {
+			omrPrefixes[p] = true
+		}
+	}
+	for _, d := range diagnostics.Data {
+		for _, c := range d.Attributes.ChildIPv6Addresses {
+			for _, child := range d.Attributes.Children {
+				if child.Rloc16 != c.Rloc16 || s.omrs[child.ExtAddress].IsValid() {
+					continue
+				}
+				for _, addr := range c.IPv6Addresses {
+					if p, err := addr.Prefix(64); err == nil && omrPrefixes[p] {
+						s.omrs[child.ExtAddress] = addr
+					}
+				}
+			}
 		}
 	}
 
