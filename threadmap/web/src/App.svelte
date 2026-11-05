@@ -51,7 +51,7 @@
   <header>
     <h1>Thread map</h1>
     <span class="status" role="status">{status}</span>
-    <button type="button" onclick={refresh} disabled={scanning}>Refresh</button>
+    <button type="button" onclick={refresh} disabled={scanning} aria-label="Refresh" title="Refresh">↻</button>
   </header>
 
   {#if error}
@@ -91,7 +91,6 @@
 
   header {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-m);
   }
@@ -104,17 +103,28 @@
 
   .status {
     color: var(--muted);
+    font-size: var(--text-small);
     flex: 1;
-    min-width: 160px;
+    min-width: 0;
+  }
+
+  h1,
+  button {
+    flex-shrink: 0;
   }
 
   button {
-    font: inherit;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    font-size: var(--text-large);
+    line-height: 1;
     color: var(--text);
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: var(--space-s) var(--space-m);
+    border-radius: 50%;
     cursor: pointer;
   }
 
