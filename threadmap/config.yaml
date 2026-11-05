@@ -1,5 +1,5 @@
 name: Threadmap
-version: "0.5.3"
+version: "0.5.4"
 slug: threadmap
 description: Map of your Thread network, read from the OpenThread Border Router add-on
 url: https://github.com/mcreekmore/threadmap
