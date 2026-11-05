@@ -24,9 +24,11 @@
 
   function elements() {
     const children = new Set(nodes.filter((n) => n.kind === 'child').map((n) => n.rloc))
+    // An unnamed border router is labelled "Border router", which its role already says.
+    const text = (n: Device) => (role(n).startsWith(n.label) ? role(n) : `${n.label}\n${role(n)}`)
     return [
       ...nodes.map((n) => ({
-        data: { id: n.rloc, text: `${n.label}\n${role(n)}`, kind: n.kind, border: n.border === true },
+        data: { id: n.rloc, text: text(n), kind: n.kind, border: n.border === true },
         position: positions.get(n.rloc),
       })),
       ...links.map((l) => ({

@@ -24,7 +24,8 @@ const (
 	reachMsg     = "can't reach the border router's REST API. Is the OpenThread Border Router add-on started?"
 )
 
-var taskPoll = 500 * time.Millisecond
+// Tasks usually finish in tens of milliseconds, and polling only reads OTBR's task list, not the mesh.
+var taskPoll = 50 * time.Millisecond
 
 // borderRouter talks to the REST API of the OpenThread Border Router add-on.
 type borderRouter struct {
@@ -45,6 +46,7 @@ func (b borderRouter) call(ctx context.Context, method, path, body string, out a
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		log.Printf("%s %s: %v", method, path, err)
 		return errors.New(reachMsg)
 	}
 	defer resp.Body.Close()
@@ -191,7 +193,6 @@ type survey struct {
 // scan reads topology over REST and names from discover, which runs alongside to keep the scan short.
 // discover is sent the addresses it should name, so it can stop once it has them all.
 func (b borderRouter) scan(ctx context.Context, discover func(context.Context, <-chan []netip.Addr) []service) (meshMap, error) {
-	start := time.Now()
 	want := make(chan []netip.Addr, 1)
 	found := make(chan []service, 1)
 	go func() { found <- discover(ctx, want) }()
@@ -200,10 +201,10 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context, <
 	if err != nil {
 		return meshMap{}, err
 	}
-	log.Printf("timing: survey done at %v", time.Since(start))
 	var warnings []string
 	// Discovery never finishes before OTBR's 10s timeout on some meshes, so only run it when the collection falls short.
 	if len(s.missing) > 0 {
+		log.Printf("Running OTBR device discovery, which can take 10s, because: %s", strings.Join(s.missing, " "))
 		status, err := b.runTask(ctx, "updateDeviceCollectionTask", discoverTask)
 		if err != nil {
 			return meshMap{}, err
@@ -214,7 +215,6 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context, <
 		if s, err = b.survey(ctx); err != nil {
 			return meshMap{}, err
 		}
-		log.Printf("timing: discovery and second survey done at %v", time.Since(start))
 	}
 	if len(s.routers) == 0 {
 		return meshMap{}, errors.New("no router reported its links")
@@ -231,7 +231,6 @@ func (b borderRouter) scan(ctx context.Context, discover func(context.Context, <
 	}
 	want <- addrs
 	services := <-found
-	log.Printf("timing: scan done at %v", time.Since(start))
 	m := buildMap(s.routers, s.omrs, services)
 	m.Warnings = append(m.Warnings, warnings...)
 	m.Warnings = append(m.Warnings, s.warnings...)

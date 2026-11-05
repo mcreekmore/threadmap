@@ -50,12 +50,17 @@ func routes(site fs.FS, scan func(context.Context) (meshMap, error)) http.Handle
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
+		start := time.Now()
 		result, err := scan(ctx)
 		if err != nil {
 			log.Printf("scan failed: %v", err)
 			w.WriteHeader(http.StatusBadGateway)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
+		}
+		log.Printf("Scan found %d devices in %v", len(result.Nodes), time.Since(start).Round(time.Millisecond))
+		for _, warning := range result.Warnings {
+			log.Printf("Warning: %s", warning)
 		}
 		json.NewEncoder(w).Encode(result)
 	})
@@ -69,12 +74,16 @@ func main() {
 	}
 	border := borderRouter{base: restBase}
 	discover := func(ctx context.Context, want <-chan []netip.Addr) []service {
-		start := time.Now()
 		services := browse(ctx, want)
-		log.Printf("timing: mDNS done at %v", time.Since(start))
-		devices := fetchHADevices(ctx, coreAPI, os.Getenv("SUPERVISOR_TOKEN"))
-		log.Printf("timing: HA names done at %v", time.Since(start))
-		return matchHA(services, devices)
+		named := matchHA(services, fetchHADevices(ctx, coreAPI, os.Getenv("SUPERVISOR_TOKEN")))
+		matched := 0
+		for _, s := range named {
+			if s.ha != nil {
+				matched++
+			}
+		}
+		log.Printf("mDNS found %d services, %d of them matched to Home Assistant devices", len(services), matched)
+		return named
 	}
 	scan := func(ctx context.Context) (meshMap, error) { return border.scan(ctx, discover) }
 	log.Printf("listening on %s", listenAddr)

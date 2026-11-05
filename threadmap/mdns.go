@@ -38,6 +38,9 @@ func browse(ctx context.Context, want <-chan []netip.Addr) []service {
 	var records []record
 
 	socks := multicastSockets()
+	if len(socks) == 0 {
+		log.Printf("mDNS: no IPv4 multicast interface to browse on, so devices can't be named")
+	}
 	for _, c := range socks {
 		defer c.Close()
 		go func() {
@@ -100,6 +103,7 @@ func browse(ctx context.Context, want <-chan []netip.Addr) []service {
 		case <-ctx.Done():
 			return nil
 		case <-deadline:
+			log.Printf("mDNS: stopped waiting after %v; devices that didn't answer stay unnamed", browseLimit)
 			return toServices(seen)
 		case wanted = <-want:
 			known, want = true, nil

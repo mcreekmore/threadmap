@@ -50,6 +50,7 @@ type haDevices struct {
 // fetchHADevices returns nil when HA can't be asked, so callers keep the raw Matter IDs instead of dropping them.
 func fetchHADevices(ctx context.Context, base, token string) *haDevices {
 	if token == "" {
+		log.Printf("No Supervisor token, so devices keep their mDNS names")
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, requestLimit) // A hung HA would otherwise hold the whole scan.
