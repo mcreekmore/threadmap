@@ -14,7 +14,7 @@
         <tr>
           <td>{node.label}</td>
           <td>{role(node)}</td>
-          <td><code>{node.rloc}</code></td>
+          <td><code>{node.rloc || '–'}</code></td>
           <td><code>{node.mac ?? 'unknown'}</code></td>
         </tr>
       {/each}

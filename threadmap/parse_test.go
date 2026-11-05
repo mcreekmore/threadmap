@@ -243,6 +243,19 @@ func TestBuildMapWarnsOnlyForUnlocatedThreadServices(t *testing.T) {
 	if m.Nodes[0].Label != "aa" {
 		t.Errorf("label = %q", m.Nodes[0].Label)
 	}
+	if len(m.Nodes) != 2 || m.Nodes[1].Kind != "missing" || m.Nodes[1].Label != "Sleepy" || m.Nodes[1].RLOC != "" {
+		t.Errorf("missing node = %+v", m.Nodes[1:])
+	}
+}
+
+func TestBuildMapJoinsOneMissingDevicesServices(t *testing.T) {
+	routers := []router{{id: 1, rloc: 0x0400, mac: "aa", linksTo: map[int]route{}}}
+	omrs := map[string]netip.Addr{"aa": netip.MustParseAddr("fd00:1:2:3::a")}
+	sleepy := []netip.Addr{netip.MustParseAddr("fd00:1:2:3::b")}
+	m := buildMap(routers, omrs, []service{{name: "Sleepy", addrs: sleepy}, {name: "Sleepy HAP", addrs: sleepy}})
+	if len(m.Nodes) != 2 || m.Nodes[1].Label != "Sleepy, Sleepy HAP" || len(m.Warnings) != 1 {
+		t.Errorf("nodes = %+v, warnings = %v", m.Nodes, m.Warnings)
+	}
 }
 
 func TestBuildMapCarriesAddressAndHADevice(t *testing.T) {

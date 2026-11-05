@@ -1,7 +1,7 @@
 <script lang="ts">
   import cytoscape from 'cytoscape'
   import DeviceCard from './DeviceCard.svelte'
-  import { role, type Device, type Link } from './types'
+  import { nodeID, role, type Device, type Link } from './types'
 
   let { nodes, links }: { nodes: Device[]; links: Link[] } = $props()
   let container: HTMLDivElement
@@ -13,7 +13,7 @@
   let wrapWidth = $state(0)
   let graphHeight = $state(0)
   let cardHeight = $state(0)
-  const device = $derived(nodes.find((n) => n.rloc === selected))
+  const device = $derived(nodes.find((n) => nodeID(n) === selected))
   const cardWidth = $derived(Math.min(280, wrapWidth - 16))
   // Beside the node, kept inside the graph's width; above the node when there's no room below it.
   const cardLeft = $derived(Math.max(8, Math.min(anchor.x + 20, wrapWidth - cardWidth - 8)))
@@ -28,8 +28,8 @@
     const text = (n: Device) => (role(n).startsWith(n.label) ? role(n) : `${n.label}\n${role(n)}`)
     return [
       ...nodes.map((n) => ({
-        data: { id: n.rloc, text: text(n), kind: n.kind, border: n.border === true },
-        position: positions.get(n.rloc),
+        data: { id: nodeID(n), text: text(n), kind: n.kind, border: n.border === true },
+        position: positions.get(nodeID(n)),
       })),
       ...links.map((l) => ({
         data: {
@@ -68,6 +68,7 @@
       },
       { selector: 'node[?border]', style: { width: 40, height: 40, 'background-color': color('--accent'), 'border-color': color('--accent') } },
       { selector: 'node[kind = "child"]', style: { width: 22, height: 22 } },
+      { selector: 'node[kind = "missing"]', style: { width: 22, height: 22, opacity: 0.5, 'border-style': 'dashed' } },
       {
         selector: 'edge',
         style: {
@@ -88,7 +89,7 @@
   }
 
   function layout() {
-    if (nodes.every((n) => positions.has(n.rloc))) return { name: 'preset', padding: 50 }
+    if (nodes.every((n) => n.kind === 'missing' || positions.has(nodeID(n)))) return { name: 'preset', padding: 50 }
     return {
       name: 'cose',
       animate: false,
@@ -106,8 +107,19 @@
       container,
       elements: elements(),
       style: graphStyle(),
-      layout: layout(),
+      layout: { name: 'preset' }, // Keeps the given positions; the real layout runs once the graph is ready.
       maxZoom: 1.25,
+    })
+    // Missing devices have no links, so the layout would push them far out and shrink the mesh to fit; row them up under it.
+    cy.ready(() => {
+      const missing = cy.nodes('[kind = "missing"]')
+      const mesh = cy.elements().not(missing)
+      mesh.layout(layout()).run()
+      const below = mesh.boundingBox()
+      missing.forEach((n, i) => {
+        if (!positions.has(n.id())) n.position({ x: below.x1 + i * 140, y: below.y2 + 60 })
+      })
+      cy.fit(undefined, 50)
     })
 
     const show = (node: cytoscape.NodeSingular) => {

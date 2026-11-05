@@ -33,6 +33,10 @@
   <h2>{device.label}</h2>
   <p class="muted">{role(device)}{device.ha?.area ? ` · ${device.ha.area}` : ''}</p>
 
+  {#if device.kind === 'missing'}
+    <p class="note">Registered, but no router has it in the mesh right now. It may be asleep or offline.</p>
+  {/if}
+
   {#if product || device.ha?.firmware}
     <dl>
       {#if product}<dt>Model</dt><dd>{product}</dd>{/if}
@@ -57,7 +61,7 @@
   {/if}
 
   <dl class="ids">
-    <dt>RLOC16</dt><dd><code>{device.rloc}</code></dd>
+    {#if device.rloc}<dt>RLOC16</dt><dd><code>{device.rloc}</code></dd>{/if}
     {#if device.mac}<dt>MAC</dt><dd><code>{device.mac}</code></dd>{/if}
     {#if device.omr}<dt>IPv6</dt><dd><code>{device.omr}</code></dd>{/if}
   </dl>
@@ -93,6 +97,10 @@
 
   p {
     margin: 0;
+  }
+
+  .note {
+    margin-top: var(--space-m);
   }
 
   .muted {

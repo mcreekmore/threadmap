@@ -36,7 +36,7 @@ type node struct {
 	RLOC   string     `json:"rloc"`
 	Label  string     `json:"label"`
 	MAC    string     `json:"mac,omitempty"`
-	Kind   string     `json:"kind"` // router or child
+	Kind   string     `json:"kind"` // router, child, or missing: registered but not found in the mesh, so it has no RLOC16
 	Leader bool       `json:"leader,omitempty"`
 	Border bool       `json:"border,omitempty"`
 	OMR    netip.Addr `json:"omr,omitzero"`
@@ -91,10 +91,11 @@ func buildMap(routers []router, omrs map[string]netip.Addr, services []service) 
 		}
 	}
 	for _, s := range services {
-		located, onMesh := false, false
+		located := false
+		var meshAddr netip.Addr
 		for _, addr := range s.addrs {
 			if p, err := addr.Prefix(64); err == nil && prefixes[p] {
-				onMesh = true
+				meshAddr = addr
 			}
 			if n := byAddr[addr]; n != nil {
 				located = true
@@ -107,8 +108,12 @@ func buildMap(routers []router, omrs map[string]netip.Addr, services []service) 
 			}
 		}
 		// Off-mesh addresses are Wi-Fi or Ethernet devices using the same service types, like Matter over LAN.
-		if onMesh && !located {
+		// A later service at the same address, like the same device's HomeKit and Matter, joins this node.
+		if meshAddr.IsValid() && !located {
 			m.Warnings = append(m.Warnings, fmt.Sprintf("%s is registered but wasn't located in the mesh; it may be asleep or offline.", s.name))
+			n := &node{Kind: "missing", OMR: meshAddr, HA: s.ha, names: []string{s.name}}
+			m.Nodes = append(m.Nodes, n)
+			byAddr[meshAddr] = n
 		}
 	}
 
@@ -145,7 +150,13 @@ func buildMap(routers []router, omrs map[string]netip.Addr, services []service) 
 		}
 	}
 
-	sort.Slice(m.Nodes, func(i, j int) bool { return m.Nodes[i].RLOC < m.Nodes[j].RLOC })
+	sort.Slice(m.Nodes, func(i, j int) bool {
+		a, b := m.Nodes[i], m.Nodes[j]
+		if (a.Kind == "missing") != (b.Kind == "missing") {
+			return b.Kind == "missing"
+		}
+		return a.RLOC+a.Label < b.RLOC+b.Label
+	})
 	sort.Slice(m.Links, func(i, j int) bool {
 		if m.Links[i].A != m.Links[j].A {
 			return m.Links[i].A < m.Links[j].A

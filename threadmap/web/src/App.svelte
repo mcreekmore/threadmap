@@ -37,7 +37,7 @@
       } catch {
         // Without storage, the next load just waits for its scan.
       }
-      const count = data.nodes.length
+      const count = (data as MeshMap).nodes.filter((n) => n.kind !== 'missing').length
       status = `${count} device${count === 1 ? '' : 's'}, scanned ${new Date().toLocaleTimeString()}`
     } catch (e) {
       error = (e as Error).message

@@ -3,7 +3,7 @@ export type Device = {
   rloc: string
   label: string
   mac?: string
-  kind: 'router' | 'child'
+  kind: 'router' | 'child' | 'missing' // missing: registered but not found in the mesh; its rloc is empty
   leader?: boolean
   border?: boolean
   omr?: string
@@ -36,7 +36,13 @@ export type MeshMap = {
   warnings: string[]
 }
 
+// Missing devices have no RLOC16, but one address each.
+export function nodeID(device: Device) {
+  return device.rloc || `missing ${device.omr}`
+}
+
 export function role(device: Device) {
+  if (device.kind === 'missing') return 'Not found'
   if (device.kind === 'child') return 'Child'
   const roles = [device.border ? 'Border router' : 'Router']
   if (device.leader) roles.push('Leader')
