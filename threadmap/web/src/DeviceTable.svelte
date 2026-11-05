@@ -17,7 +17,7 @@
       <tr><th>Device</th><th>Role</th><th>RLOC16</th><th>MAC</th></tr>
     </thead>
     <tbody>
-      {#each nodes as node (node.rloc)}
+      {#each nodes as node}
         <tr>
           <td>{node.label}</td>
           <td>{role(node)}</td>
