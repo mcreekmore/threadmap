@@ -5,6 +5,17 @@
 
   const savedKey = 'threadmap-last-map'
 
+  const qualities = [
+    { level: 3, name: 'Good', meaning: 'More than 20 dB of link margin' },
+    { level: 2, name: 'Reasonable', meaning: 'More than 10 dB of link margin' },
+    { level: 1, name: 'Poor', meaning: 'More than 2 dB of link margin' },
+    {
+      level: 0,
+      name: 'None',
+      meaning: 'Heard in one direction only, or 2 dB of link margin or less',
+    },
+  ]
+
   function lastMap(): MeshMap | null {
     try {
       return JSON.parse(localStorage.getItem(savedKey) ?? 'null')
@@ -27,7 +38,10 @@
       const res = await fetch('api/topology', { cache: 'no-store' })
       // While the add-on restarts, ingress answers with an HTML error page.
       const data = await res.json().catch(() => null)
-      if (!res.ok || !data) throw new Error(data?.error ?? `Scan failed: ${res.status} ${res.statusText}`)
+      if (!res.ok || !data)
+        throw new Error(
+          data?.error ?? `Scan failed: ${res.status} ${res.statusText}`,
+        )
       map = data
       try {
         localStorage.setItem(savedKey, JSON.stringify(data))
@@ -51,7 +65,13 @@
   <header>
     <h1>Thread map</h1>
     <span class="status" role="status">{status}</span>
-    <button type="button" onclick={refresh} disabled={scanning} aria-label="Refresh" title="Refresh">↻</button>
+    <button
+      type="button"
+      onclick={refresh}
+      disabled={scanning}
+      aria-label="Refresh"
+      title="Refresh">↻</button
+    >
   </header>
 
   {#if error}
@@ -62,10 +82,11 @@
     <MeshGraph nodes={map.nodes} links={map.links} />
 
     <div class="legend">
-      <span><i style:border-color="var(--q3)"></i>Quality 3</span>
-      <span><i style:border-color="var(--q2)"></i>Quality 2</span>
-      <span><i style:border-color="var(--q1)"></i>Quality 1</span>
-      <span><i style:border-color="var(--q0)"></i>Quality 0</span>
+      {#each qualities as { level, name, meaning }}
+        <span title={meaning}
+          ><i style:border-color="var(--q{level})"></i>q{level} {name}</span
+        >
+      {/each}
     </div>
 
     {#if map.warnings.length > 0}
@@ -146,14 +167,14 @@
   .legend {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-s) var(--space-l);
+    gap: var(--space-s) var(--space-m);
     color: var(--muted);
     font-size: var(--text-small);
   }
 
   .legend i {
     display: inline-block;
-    width: 22px;
+    width: 14px;
     border-top: 3px solid;
     vertical-align: middle;
     margin-right: var(--space-s);
